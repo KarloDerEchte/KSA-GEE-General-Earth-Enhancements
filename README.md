@@ -1,0 +1,121 @@
+# KSA-GEE-General-Earth-Enhancements
+
+A StarMap mod for **Kitten Space Agency** that puts the real world on Earth:
+buildings and roads from OpenStreetMap around the camera, city lights at night, and satellite imagery when you look
+down from altitude.
+
+> **Heads-up:** this mod was programmed entirely by Claude (Anthropic's AI). It works, but it is a hobby project:
+> don't expect anything too special, and expect rough edges.
+
+<img width="2546" height="1361" alt="image" src="https://github.com/user-attachments/assets/182b5420-def4-4524-948c-f4d95229c17e" />
+<img width="1252" height="1135" alt="image" src="https://github.com/user-attachments/assets/cc1b911e-1ade-4f7e-be20-291b9606d06a" />
+<img width="2554" height="1359" alt="image" src="https://github.com/user-attachments/assets/af184066-ede0-49c8-ae8a-e20691bf3880" />
+<img width="1120" height="700" alt="image" src="https://github.com/user-attachments/assets/0ae2d02c-c1c7-43ac-af69-9eeb7b87b83b" />
+
+
+
+## Features
+
+- **Buildings and roads** from OpenStreetMap vector tiles, streamed around the camera and cached on disk. Buildings
+  get facades, roofs, details nearby and a window pass. Roads are laid exactly on the terrain. The game's trees and
+  shrubs are cleared from roads and buildings.
+- **Far field**: simplified buildings out to tens of kilometres, so cities stay visible after launch.
+- **Night**: lit windows, street lights in towns, and city lights visible from orbit.
+- **Satellite imagery** (Sentinel-2 cloudless, 2016) draped over the ground when seen from altitude.
+- **Launch Complex 39A**: the fixed service structure (from NASA's "Gantry" model) with a crew access arm that
+  docks and undocks, an integration tower, water and lightning towers, hangar, tank farm with boil-off vapour, and
+  pipelines. Also LC-39B's towers and the Vehicle Assembly Building.
+
+## Install
+
+1. Install Kitten Space Agency and the StarMap mod loader.
+2. Download the release zip and extract it so that you have
+   `Documents/My Games/Kitten Space Agency/mods/OsmBuildings/` with `mod.toml`, `OsmBuildings.dll`, `Assets.xml`,
+   `Meshes/` and `Textures/` in it.
+3. Start the game through StarMap. The mod window is in the mods menu.
+
+The mod needs an internet connection the first time an area is shown. Everything downloaded is cached under
+`mods/OsmBuildings/cache/`, and "Clear download cache" in the window empties it.
+
+## Settings
+
+Every part of the mod can be switched off on its own, in the mod window or in `settings.json` in the mod folder
+(written on the first start). For example, turn off the low-poly OSM buildings but keep the roads, the satellite
+imagery and the launch complex.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `Enabled` | on | The whole mod |
+| `ShowBuildings` | on | Plain OpenStreetMap buildings (boxes with facades and roofs) |
+| `ShowRoads` | on | Roads (and the street light glow along them) |
+| `LaunchComplexModels` | on | The modelled launch complexes: LC-39A/B towers, crew arm, VAB, hangar, pipelines, tank farm |
+| `Airports` | on | Runways, taxiways, aprons and their lights |
+| `Roofs`, `BuildingDetails`, `Windows` | on | Pitched roofs, details near the camera (doors, cornices, roof units), window pass |
+| `ReflectorPosts` | on | Small posts along unlit roads |
+| `NightLights`, `CityGlow`, `RegionalLights`, `GlobalLights` | on | Point lights near the camera, night glow, city lights from orbit |
+| `ClearClutter` | on | Removes the game's trees and shrubs from roads and buildings |
+| `LoadRadiusKm`, `RenderDistanceKm` | 3, 15 | How far detailed tiles are loaded and drawn |
+| `MaxInstances` | 150000 | Cap on drawn building pieces; beyond it, distant small buildings thin out |
+| `FarBuildings`, `FarRadiusKm` | on, 35 | Simplified far buildings |
+| `SatelliteImagery`, `SatelliteFadeFromM` | on, 1500 | Satellite imagery from altitude, fading in above this height |
+| `StreetLights` | `BuiltUp` | `BuiltUp` (lit in towns, from building density), `Data` (OpenStreetMap lamps, see below), `All`, `None` |
+| `StreetLightOverpassUrls` | overpass-api.de | Overpass servers for `Data` mode, comma separated |
+| `TankVapor` | on | Vapour over the launch complex tank farms |
+
+### Street light data (optional)
+
+`StreetLights = "Data"` places street lights where OpenStreetMap maps them (`highway=street_lamp`, `lit=yes/no`).
+That data is not in the vector tiles, so it comes from an Overpass API server. The public servers are shared,
+volunteer-run and slow (15–90 s per area), and their
+[usage policy](https://dev.overpass-api.de/overpass-doc/en/preface/commons.html) asks apps with many users not to
+rely on them. The mode is therefore off by default. If you use it, prefer your own Overpass instance; results are
+cached for good.
+
+## Building from source
+
+Requirements: .NET 10 SDK, the game, and StarMap.
+
+```
+cd src
+dotnet build -c Release
+```
+
+The build writes `OsmBuildings.dll` into the mod folder. If the game is not installed in
+`C:\Program Files\Ahwoo\Games\Kitten Space Agency\`, pass `-p:KsaDir="<game folder>\"`. Close the game first: it
+locks the DLL.
+
+The meshes and textures are generated by Python scripts (Python 3 with numpy and Pillow):
+
+```
+cd src/tools
+python make_assets.py
+```
+
+## Roadmap
+
+Next up:
+
+1. Bug fixes
+2. Street rework
+3. Building enhancements
+
+## Contributing
+
+Contributions are welcome: bug reports, ideas, screenshots and pull requests. Open an issue or a pull request on
+GitHub. By contributing you agree that your contribution is licensed under the GPL-3.0 (with the additional
+permission in `NOTICE.md`), like the rest of the mod.
+
+## Credits and licenses
+
+OsmBuildings is free software under the **GNU General Public License v3.0** (`LICENSE`), with an additional
+permission to combine it with Kitten Space Agency, StarMap and Harmony (`NOTICE.md`). You may use, change and share
+it; if you distribute a modified version, you must publish its complete source code under the same license. Data and
+models from others keep their own licenses; `NOTICE.md` has the details.
+
+- Map data © OpenStreetMap contributors (ODbL), © OpenMapTiles; tiles by [OpenFreeMap](https://openfreemap.org).
+- Satellite imagery: EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus
+  Sentinel data 2016), CC BY 4.0.
+- LC-39 fixed service structure: NASA 3D Resources "Gantry" (NASA / Michael D. Carbajal). Not endorsed by NASA.
+
+This is a fan-made mod. It is not affiliated with or endorsed by the game's developers, NASA, SpaceX, or any data
+provider.

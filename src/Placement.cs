@@ -177,6 +177,26 @@ public static class Placement
         };
     }
 
+    /// <summary>
+    /// How far flat surfaces (roads, airfield surfaces) are drawn in front of the ground, per metre from the camera
+    /// (vertically): the game's terrain far away is a coarse mesh that lies metres off the exact heights they sit on.
+    /// </summary>
+    public const double FlatPullPerMeter = 0.001;
+
+    /// <summary>
+    /// Scale about the camera that draws a flat surface FlatPullPerMeter x distance (vertically) nearer: same place
+    /// on screen, nearer in depth; grazing views need a longer pull along the ray for the same height.
+    /// </summary>
+    public static float FlatPull(in BuildingInstance b, double3 cameraCcf)
+    {
+        double3 d = b.Center - cameraCcf;
+        double dist = Length(d), upLength = Length(b.Up);
+        if (dist < 1 || upLength <= 0)
+            return 1;
+        double sinDepression = Math.Max(-double3.Dot(d, b.Up) / (dist * upLength), 0.05);
+        return (float)(1 - Math.Min(FlatPullPerMeter / sinDepression, 0.5));
+    }
+
     private static double Length(double3 v) => Math.Sqrt(double3.Dot(v, v));
 
     /// <summary>Longest road piece before refinement.</summary>
@@ -186,6 +206,9 @@ public static class Placement
     /// <summary>How far the terrain at a piece's middle may lie off the straight piece.</summary>
     private const double RoadToleranceMeters = 0.08;
     private const double RoadDepth = 1.5;
+    /// <summary>Height of a bridge deck's surface above the ground (overpasses throughout, other bridges at tile cuts).</summary>
+    public const double BridgeClearance = 6.0;
+    private const double BridgeRampMeters = 35.0;
 
     /// <summary>
     /// Lays a road on the terrain as thin slabs, each tilted along the slope and across it. terrain should
@@ -200,6 +223,17 @@ public static class Placement
     {
         var dirs = new List<double3>();
         var points = RoundedPoints(road, radius);
+        // Junctions (RoadJunctions): the road is cut where its clear stretch around each junction point begins and
+        // ends, and the pieces within are laid without lines.
+        var junctions = new List<(double3 At, double Clear)>();
+        if (road.Clear != null)
+            for (int k = 0; k < road.Points.Count; k++)
+                if (road.Clear[k] > 0)
+                {
+                    double3 at = DirCcf(road.Points[k].Lat, road.Points[k].Lon);
+                    junctions.Add((at * radius, road.Clear[k]));
+                    SplitAround(points, at, road.Clear[k] / radius);
+                }
         for (int i = 0; i < points.Count; i++)
         {
             double3 d = points[i];
@@ -229,20 +263,48 @@ public static class Placement
                 along[i] = total += Math.Sqrt(double3.Dot(dirs[i] - dirs[i - 1], dirs[i] - dirs[i - 1])) * radius;
             double h0 = Math.Max(terrain(dirs[0]), 0), h1 = Math.Max(terrain(dirs[^1]), 0);
             for (int i = 0; i < dirs.Count; i++)
-                heights[i] = total > 0 ? h0 + (h1 - h0) * along[i] / total : h0;
+            {
+                double t = total > 0 ? along[i] / total : 0;
+                double baseHeight = h0 + (h1 - h0) * t;
+                double clearance = road.Overpass ? BridgeClearance
+                    : road.StartAtTileEdge
+                    ? road.EndAtTileEdge ? BridgeClearance
+                        : BridgeClearance * Math.Clamp((total - along[i]) / Math.Min(BridgeRampMeters, total), 0, 1)
+                    : road.EndAtTileEdge
+                        ? BridgeClearance * Math.Clamp(along[i] / Math.Min(BridgeRampMeters, total), 0, 1)
+                        : BridgeClearance * 4 * t * (1 - t);
+                heights[i] = baseHeight + clearance;
+            }
         }
         else
         {
             (dirs, heights) = Refine(dirs, radius, terrain);
         }
 
+        // Approaches to an overpass climb to its deck (RoadBridges), easing in at both ends of the climb.
+        var ramp = new double[dirs.Count];
+        if ((road.RampStart > 0 || road.RampEnd > 0) && road.RampLength > 0)
+        {
+            var at = new double[dirs.Count];
+            for (int i = 1; i < dirs.Count; i++)
+                at[i] = at[i - 1] + Math.Sqrt(double3.Dot(dirs[i] - dirs[i - 1], dirs[i] - dirs[i - 1])) * radius;
+            double Ease(double x) { x = Math.Clamp(x, 0, 1); return 1 - x * x * (3 - 2 * x); }
+            for (int i = 0; i < dirs.Count; i++)
+            {
+                ramp[i] = Math.Max(road.RampStart * Ease(at[i] / road.RampLength), road.RampEnd * Ease((at[^1] - at[i]) / road.RampLength));
+                heights[i] += ramp[i];
+            }
+        }
+
         double half = road.Width / 2;
+        // An end at a junction reaches across the road it meets (as far as that one is wide), not past it.
+        double EndReach(int point) => road.Clear?[point] is > 0 and var c ? Math.Min(half, (c - 0.5) / 1.15) : half;
         double Extension(int joint)
         {
             if (joint == 0)
-                return road.StartAtTileEdge ? 0 : half;
+                return road.StartAtTileEdge ? 0 : EndReach(0);
             if (joint == dirs.Count - 1)
-                return road.EndAtTileEdge ? 0 : half;
+                return road.EndAtTileEdge ? 0 : EndReach(road.Points.Count - 1);
             double3 a = double3.Normalize(dirs[joint] - dirs[joint - 1]);
             double3 b = double3.Normalize(dirs[joint + 1] - dirs[joint]);
             double cos = Math.Clamp(double3.Dot(a, b), -1, 1);
@@ -334,25 +396,117 @@ public static class Placement
 
             double before = Extension(i), after = Extension(i + 1);
             double3 center = mid + along * ((after - before) / 2);
+            int pieceVariant = variant;
+            double3 ground = up * radius;
+            foreach (var (at, clear) in junctions)
+                if (double3.Dot(ground - at, ground - at) < (clear - 0.01) * (clear - 0.01) && !airfield)
+                    pieceVariant = Buildings.PlainVariant(road.Surface);
             // Neighbouring pieces overlap in bends; a few millimetres between them keep them from flickering.
             double lift = road.Lift + (i & 1) * 0.004;
+            // A ramp up to an overpass stands on its embankment: the slab reaches down to the ground.
+            double depth = RoadDepth + Math.Max(ramp[i], ramp[i + 1]);
             add(new BuildingInstance
             {
-                Up = up * (RoadDepth + lift),
+                Up = up * (depth + lift),
                 AxisA = along * (length + before + after),
                 AxisB = side * road.Width + up * cross,
-                Base = center - up * RoadDepth,
+                Base = center - up * depth,
                 Center = mid,
-                Variant = variant,
+                Variant = pieceVariant,
                 IsRoad = true,
                 Layer = Layers.Street,
                 Style = Buildings.StyleNone,
             });
+
+            // Concrete parapets along both edges of an overpass deck.
+            if (road.Overpass)
+                foreach (double sign in new[] { -1.0, 1.0 })
+                    add(new BuildingInstance
+                    {
+                        Up = up * (ParapetHeight + 0.1),
+                        AxisA = along * (length + before + after),
+                        AxisB = side * ParapetWidth,
+                        Base = center + up * (lift - 0.1) + side * (sign * (half - ParapetWidth / 2)),
+                        Center = mid,
+                        Variant = Buildings.ApronVariant,
+                        IsDetail = true,
+                        Layer = Layers.Street,
+                        Style = Buildings.StyleNone,
+                    });
         }
 
-        if (road.Pads != null)
-            foreach (var pad in road.Pads)
-                add(MakePad(DirCcf(road.Points[pad.Point].Lat, road.Points[pad.Point].Lon), pad, radius, terrain));
+        if (road.Overpass && road.Pillars != null)
+            AddPillars(road, dirs, heights, radius, terrain, add);
+    }
+
+    private const double ParapetHeight = 0.9, ParapetWidth = 0.35;
+
+    /// <summary>Concrete pillars from the ground up to the underside of an overpass deck, at road.Pillars.</summary>
+    private static void AddPillars(RawRoad road, List<double3> dirs, double[] heights, double radius, Func<double3, double> terrain,
+        Action<BuildingInstance> add)
+    {
+        var at = new double[dirs.Count];
+        for (int i = 1; i < dirs.Count; i++)
+            at[i] = at[i - 1] + Math.Acos(Math.Clamp(double3.Dot(dirs[i - 1], dirs[i]), -1, 1)) * radius;
+        foreach (double s in road.Pillars!)
+        {
+            int i = 1;
+            while (i < dirs.Count - 1 && at[i] < s)
+                i++;
+            double f = at[i] > at[i - 1] ? Math.Clamp((s - at[i - 1]) / (at[i] - at[i - 1]), 0, 1) : 0;
+            double3 dir = double3.Normalize(dirs[i - 1] + (dirs[i] - dirs[i - 1]) * f);
+            double deckBottom = heights[i - 1] + (heights[i] - heights[i - 1]) * f - RoadDepth;
+            double ground = Math.Max(terrain(dir), 0) - 1;
+            if (deckBottom - ground < 2)
+                continue;
+            double3 along = double3.Normalize(dirs[i] - dirs[i - 1]);
+            along = double3.Normalize(along - dir * double3.Dot(along, dir));
+            double3 side = double3.Cross(dir, along);
+            add(new BuildingInstance
+            {
+                Up = dir * (deckBottom - ground + 0.05),
+                AxisA = along * 1.4,
+                AxisB = side * Math.Max(road.Width * 0.55, 2.5),
+                Base = dir * (radius + ground),
+                Center = dir * (radius + ground + 1),
+                Variant = Buildings.ApronVariant,
+                Layer = Layers.Street,
+                Style = Buildings.StyleNone,
+            });
+        }
+    }
+
+    /// <summary>
+    /// Inserts points at the given angular distance (arc length / radius) before and after a point of the line, so
+    /// pieces start and end exactly where a junction's clear stretch does.
+    /// </summary>
+    private static void SplitAround(List<double3> points, double3 at, double distance)
+    {
+        int index = points.FindIndex(p => double3.Dot(p - at, p - at) < 1e-16);
+        if (index < 0)
+            return;
+        foreach (int step in new[] { 1, -1 })
+        {
+            double left = distance;
+            for (int i = index; i + step >= 0 && i + step < points.Count; i += step)
+            {
+                double3 a = points[i], b = points[i + step];
+                double length = Math.Acos(Math.Clamp(double3.Dot(a, b), -1, 1));
+                if (length >= left)
+                {
+                    // Close to an existing point: that point does.
+                    if (length - left > 0.3e-7)
+                    {
+                        double3 split = double3.Normalize(a + (b - a) * (left / length));
+                        points.Insert(step > 0 ? i + 1 : i, split);
+                        if (step < 0)
+                            index++;
+                    }
+                    break;
+                }
+                left -= length;
+            }
+        }
     }
 
     /// <summary>Longest stretch on each side of a corner that a bend is rounded off over.</summary>
@@ -404,33 +558,6 @@ public static class Placement
     }
 
     /// <summary>
-    /// A junction pad (RoadJunctions): the round slab mesh, tilted with the terrain under its rim and sheared so
-    /// its sides stay vertical, its top pad.Lift above the terrain at its centre.
-    /// </summary>
-    public static BuildingInstance MakePad(double3 dir, JunctionPad pad, double radius, Func<double3, double> terrain)
-    {
-        Axes(dir, out double3 east, out double3 north);
-        double3 ground = dir * radius;
-        double Height(double3 offset) => Math.Max(terrain(double3.Normalize(ground + offset)), 0);
-        double h = Math.Max(terrain(dir), 0);
-        double r = pad.Radius;
-        double slopeEast = Height(east * r) - Height(-east * r), slopeNorth = Height(north * r) - Height(-north * r);
-        double3 center = dir * (radius + h);
-        return new BuildingInstance
-        {
-            Up = dir * (RoadDepth + pad.Lift),
-            AxisA = east * (2 * r) + dir * slopeEast,
-            AxisB = north * (2 * r) + dir * slopeNorth,
-            Base = center - dir * RoadDepth,
-            Center = center,
-            Variant = Buildings.JunctionVariant,
-            IsRoad = true,
-            Layer = Layers.Street,
-            Style = Buildings.StyleNone,
-        };
-    }
-
-    /// <summary>
     /// Terrain heights along a road line, with pieces halved (down to RoadMinPieceMeters) wherever the
     /// terrain at a piece's middle lies more than RoadToleranceMeters off the straight line between its ends.
     /// </summary>
@@ -471,12 +598,12 @@ public static class Placement
     /// Model-to-ego matrix (row vectors, like the game's static objects): the box axes and base point,
     /// relative to the camera, rotated from CCF into ecliptic axes. rx/ry/rz are the CCF unit axes in CCE.
     /// </summary>
-    public static float4x4 ModelToEgo(in BuildingInstance b, double3 cameraCcf, double3 rx, double3 ry, double3 rz)
+    public static float4x4 ModelToEgo(in BuildingInstance b, double3 cameraCcf, double3 rx, double3 ry, double3 rz, double scale = 1)
     {
-        double3 u = Rotate(b.Up, rx, ry, rz);
-        double3 a = Rotate(b.AxisA, rx, ry, rz);
-        double3 c = Rotate(b.AxisB, rx, ry, rz);
-        double3 p = Rotate(b.Base - cameraCcf, rx, ry, rz);
+        double3 u = Rotate(b.Up, rx, ry, rz) * scale;
+        double3 a = Rotate(b.AxisA, rx, ry, rz) * scale;
+        double3 c = Rotate(b.AxisB, rx, ry, rz) * scale;
+        double3 p = Rotate(b.Base - cameraCcf, rx, ry, rz) * scale;
         return new float4x4(
             (float)u.X, (float)u.Y, (float)u.Z, 0,
             (float)a.X, (float)a.Y, (float)a.Z, 0,

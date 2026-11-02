@@ -79,33 +79,49 @@ def pbr_pixel(rough, metal):
     return pixel
 
 
-# Road surfaces from a scan (road, street, ramp, highway, junction pad): a square texture whose first SCAN_SPLIT
-# columns are the slab sides and the rest its top, SCAN_GAP pixels of margin kept off the edges (GEE_ScannedSlab and
-# GEE_RoadDisc map the same). AoRoughMetal at half size: roughness and AO need less detail than colour.
+# Road surfaces from scans (Buildings.RoadVariant and the variants after the crew arm): a square texture whose first
+# SCAN_SPLIT columns are the slab sides and the rest its top, SCAN_GAP pixels of margin kept off the edges
+# (GEE_ScannedSlab maps the same). AoRoughMetal at half size: roughness and AO need less detail than colour.
 SCAN_SIZE, SCAN_PBR_SIZE, SCAN_SPLIT, SCAN_GAP = 2048, 1024, 128, 4
-# The longest road piece (Placement.RoadPieceMeters): every dash period and the 2 m scan divide it, so the surface
-# runs on seamlessly from piece to piece.
-ROAD_PIECE, SCAN_METERS = 16.0, 2.0
+# The longest road piece (Placement.RoadPieceMeters): every dash period divides it and each scan repeats a whole
+# number of times along it, so the surface runs on seamlessly from piece to piece.
+ROAD_PIECE = 16.0
 POLYHAVEN_DIR = os.path.join(os.path.dirname(__file__), "data", "polyhaven")
-SCAN_ASSET, SCAN_RESOLUTION = "asphalt_pit_lane", "8k"
+SCAN_RESOLUTION = "8k"
+
+# Poly Haven scans (CC0, 8k): asset, size of the scan in metres, saturation kept, mean brightness (0-255).
+SCANS = {
+    # Clean, even race-track asphalt: highways and their ramps.
+    "pit lane": ("asphalt_pit_lane", 2.0, 0.35, 64),
+    # Fine-grained grey asphalt: main roads (asphalt_02's cracks repeat in every tile and read as joints).
+    "road": ("clean_asphalt", 2.1, 0.35, 66),
+    # Rough, worn asphalt: streets.
+    "street": ("asphalt_01", 2.08, 0.35, 70),
+    # Compacted dirt: unpaved tracks.
+    "dirt": ("dirt", 2.0, 0.85, 100),
+}
 
 # Markings, metres from the right edge (v = 0, the slab's -B side; right-hand traffic): centre, width and either
 # None (solid) or (dash, period). Each profile is laid out for one width; narrower or wider roads stretch it.
 ROAD_PROFILES = {
     # Primary, secondary, tertiary (Buildings.RoadVariant): edge lines and a dashed centre line.
-    "road": (8.0, [(0.35, 0.12, None), (7.65, 0.12, None), (4.0, 0.12, (3.0, 8.0))]),
-    # Minor, residential, service, track (Buildings.StreetVariant): no markings.
-    "street": (6.0, []),
-    # One-lane motorway and trunk links (Buildings.RampVariant): edge lines.
-    "ramp": (6.0, [(0.6, 0.15, None), (5.5, 0.15, None)]),
+    "road": ("road", 8.0, [(0.35, 0.12, None), (7.65, 0.12, None), (4.0, 0.12, (3.0, 8.0))]),
+    # The same asphalt without lines where roads meet (Buildings.RoadPlainVariant).
+    "road plain": ("road", 8.0, []),
     # One carriageway of a motorway or trunk (Buildings.HighwayVariant): 2.5 m hard shoulder, two 3.75 m lanes split
     # by a dashed line (6 m dash, 10 m gap), solid edge lines and a 0.75 m strip on the left.
-    "highway": (11.0, [(2.5, 0.20, None), (10.25, 0.15, None), (6.25, 0.15, (6.0, 16.0))]),
+    "highway": ("pit lane", 11.0, [(2.5, 0.20, None), (10.25, 0.15, None), (6.25, 0.15, (6.0, 16.0))]),
+    # Minor, residential, service (Buildings.StreetVariant): no markings.
+    "street": ("street", 6.0, []),
+    # One-lane motorway and trunk links (Buildings.RampVariant): edge lines.
+    "ramp": ("pit lane", 6.0, [(0.6, 0.15, None), (5.5, 0.15, None)]),
+    # Tracks and unpaved roads (Buildings.TrackVariant).
+    "track": ("dirt", 4.0, []),
 }
 
 
 def scan_uv():
-    """u ranges of the top and the sides and v range of the top, as unit_box and road_disc take them."""
+    """u ranges of the top and the sides and v range of the top, as unit_box takes them."""
     n, s, g = SCAN_SIZE, SCAN_SPLIT, SCAN_GAP
     return dict(top=((s + g) / n, (n - g) / n), side=(g / n, (s - g) / n), across=(g / n, (n - g) / n))
 
@@ -130,44 +146,64 @@ def polyhaven_maps(asset, resolution):
     return images
 
 
-_scan_cache = []
+_scan_cache = {}
 
 
-def scanned_images(width, length, lines, wrap=True):
-    """Road surface from the Poly Haven "Asphalt Pit Lane" scan (2 m square, 8k) at its real size: the top stands for
-    width metres across and length along (tiled; with wrap the scan repeats exactly length / 2 m times so pieces
-    join seamlessly). lines as in ROAD_PROFILES. Toned to a neutral grey asphalt."""
+def scanned_images(scan, width, lines):
+    """Road surface from a Poly Haven scan (SCANS) at its real size: the top stands for width metres across and a
+    ROAD_PIECE along, the scan repeated a whole number of times along it (stretched by a few per cent if need be) so
+    pieces join seamlessly. lines as in ROAD_PROFILES."""
     import numpy as np
     from PIL import Image
-    if not _scan_cache:
-        _scan_cache.extend(polyhaven_maps(SCAN_ASSET, SCAN_RESOLUTION))
-    diff, arm = _scan_cache
+    asset, scan_m, saturation, brightness = SCANS[scan]
+    if asset not in _scan_cache:
+        _scan_cache[asset] = polyhaven_maps(asset, SCAN_RESOLUTION)
+    diff, arm = _scan_cache[asset]
     n, s, g = SCAN_SIZE, SCAN_SPLIT, SCAN_GAP
     used_along, used_across = n - s - 2 * g, n - 2 * g
-    tiles_along = length / SCAN_METERS
+    tiles_along = max(1, round(ROAD_PIECE / scan_m))
     tile_w = round(used_along / tiles_along)
-    if wrap:
-        assert tile_w * tiles_along == used_along
-    tile_h = round(used_across / (width / SCAN_METERS))
+    tile_h = round(used_across / (width / scan_m))
+
+    def flatten(a):
+        """Divides out the scan's soft light falloff (a wrap-around Gaussian blur of a fifth of the tile), keeping
+        its grain: otherwise every repeat shows as a square on the road."""
+        h, w = a.shape[:2]
+        sigma = 0.2 * min(h, w)
+        fy, fx = np.fft.fftfreq(h)[:, None], np.fft.fftfreq(w)[None, :]
+        kernel = np.exp(-2 * (np.pi * sigma) ** 2 * (fx * fx + fy * fy))
+        low = np.real(np.fft.ifft2(np.fft.fft2(a, axes=(0, 1)) * kernel[..., None], axes=(0, 1)))
+        return a / np.maximum(low, 1.0) * a.mean(axis=(0, 1))
+
+    def tile_resize(img):
+        """The scan scaled to one tile; it is padded with its own opposite edges first, so the filter wraps around
+        and the tile edges still meet (a plain resize clamps them and leaves a seam at every repeat)."""
+        src = np.asarray(img)
+        pad = 4
+        my, mx = round(pad * src.shape[0] / tile_h), round(pad * src.shape[1] / tile_w)
+        padded = np.pad(src, ((my, my), (mx, mx), (0, 0)), mode="wrap")
+        small = Image.fromarray(padded).resize((tile_w + 2 * pad, tile_h + 2 * pad), Image.LANCZOS)
+        return np.asarray(small, dtype="float32")[pad:-pad, pad:-pad]
 
     def region(img):
-        a = np.asarray(img.resize((tile_w, tile_h), Image.LANCZOS), dtype="float32")
-        big = np.tile(a, (n // tile_h + 2, (n - s) // tile_w + 2, 1))
-        # The pattern starts at the first used column, so it wraps exactly from one piece to the next.
-        off = (-g) % tile_w
-        return big[:n, off:off + n - s].copy()
+        a = flatten(tile_resize(img))
+        strip = np.tile(np.clip(a, 0, 255), (n // tile_h + 2, tiles_along, 1))[:n]
+        if strip.shape[1] != used_along:
+            strip = np.asarray(Image.fromarray(strip.astype("uint8")).resize((used_along, n), Image.LANCZOS), dtype="float32")
+        # The margins continue the pattern, so it wraps exactly from one piece to the next.
+        return np.concatenate([strip[:, -g:], strip, strip[:, :g]], axis=1)
 
     rgb, pbr = region(diff), region(arm)
-    # The scan is warm brown; real asphalt is a neutral dark grey with an albedo of about 0.1 (lighter read as
+    # Scans are warm brown; real asphalt is a neutral dark grey with an albedo of about 0.1 (lighter read as
     # concrete paths in game).
     lum = rgb.mean(axis=-1, keepdims=True)
-    rgb = lum + 0.35 * (rgb - lum)
-    rgb *= 64 / rgb.mean()
+    rgb = lum + saturation * (rgb - lum)
+    rgb *= brightness / rgb.mean()
     rows = np.arange(n, dtype="float32")[:, None]
     cols = np.arange(n - s, dtype="float32")[None, :]
     across_m = np.clip((rows - g) / (used_across - 1), 0, 1) * width
-    along_m = (cols - g) / used_along * length
-    px_across, px_along = used_across / width, used_along / length
+    along_m = (cols - g) / used_along * ROAD_PIECE
+    px_across, px_along = used_across / width, used_along / ROAD_PIECE
 
     paint = np.zeros((n, n - s), dtype="float32")
     for centre, line_width, dash in lines:
@@ -201,13 +237,8 @@ def scanned_images(width, length, lines, wrap=True):
 
 
 def road_profile_images(name):
-    width, lines = ROAD_PROFILES[name]
-    return scanned_images(width, ROAD_PIECE, lines)
-
-
-def junction_pad_images():
-    """The pad's top is mapped from above: about a 10 m pad, plain."""
-    return scanned_images(10.0, 10.0, [], wrap=False)
+    scan, width, lines = ROAD_PROFILES[name]
+    return scanned_images(scan, width, lines)
 
 
 # Gabled roofs (Buildings.FirstRoofVariant on in C#): name, tile rgb, gable wall rgb.
@@ -344,39 +375,6 @@ def unit_box(up_normals=False, top=(0.53, 0.97), side=(0.03, 0.47), across=(0.03
     return positions, normals, uvs, indices
 
 
-def road_disc(segments=32, top=(0.53, 0.97), side=(0.03, 0.47), across=(0.03, 0.97)):
-    """Round junction pad: a flat cylinder, x in [0, 1] up, radius 0.5 in y and z, no bottom face. All normals face
-    up (as on the road slabs). The top is mapped from above into the texture's top range, the rim into its side
-    range (as unit_box takes them)."""
-    import math
-    m = 0.03
-    positions, normals, uvs, indices = [], [], [], []
-    ring = [(0.5 * math.cos(2 * math.pi * k / segments), 0.5 * math.sin(2 * math.pi * k / segments)) for k in range(segments)]
-    top_uv = lambda y, z: (top[0] + (top[1] - top[0]) * (y + .5), across[0] + (across[1] - across[0]) * (z + .5))
-    centre = len(positions)
-    positions.append((1, 0, 0))
-    normals.append((1, 0, 0))
-    uvs.append(top_uv(0, 0))
-    for y, z in ring:
-        positions.append((1, y, z))
-        normals.append((1, 0, 0))
-        uvs.append(top_uv(y, z))
-    for k in range(segments):
-        a, b = centre + 1 + k, centre + 1 + (k + 1) % segments
-        # counter-clockwise seen from above (+x): (y, z) turns from k to k + 1 about +x
-        indices += [centre, a, b]
-    for k in range(segments):
-        (y0, z0), (y1, z1) = ring[k], ring[(k + 1) % segments]
-        base = len(positions)
-        for (y, z), x in (((y0, z0), 0), ((y1, z1), 0), ((y1, z1), 1), ((y0, z0), 1)):
-            positions.append((x, y, z))
-            normals.append((1, 0, 0))
-            uvs.append((side[0] + (side[1] - side[0]) * (k + (y == y1 and z == z1)) / segments, m + (1 - 2 * m) * (1 - x)))
-        # outward: counter-clockwise seen from outside
-        indices += [base, base + 1, base + 2, base, base + 2, base + 3]
-    return positions, normals, uvs, indices
-
-
 def write_flat_normal_bc5(path):
     """Flat normal map (x = y = 0) as a 4x4 BC5 KTX2 with its mips, uncompressed. The game reads normal maps as BC5
     only: a PNG or RGBA8 one came out as a non-flat placeholder that tilted every normal by tens of degrees (dark navy
@@ -457,7 +455,7 @@ def main():
               [(box_mesh, unit_box()), (road_mesh, unit_box(up_normals=True)), (gable_mesh, gable()),
                (tank_mesh, structure_assets.tank_mesh()), ("GEE_TankDome", structure_assets.dome_mesh()),
                ("GEE_HTank", structure_assets.horizontal_tank()), ("GEE_Tent", structure_assets.tent()),
-               ("GEE_CrewArm", structure_assets.crew_arm()), ("GEE_RoadDisc", road_disc(**scan_uv())),
+               ("GEE_CrewArm", structure_assets.crew_arm()),
                ("GEE_ScannedSlab", unit_box(up_normals=True, **scan_uv()))]
               + landmark_assets.meshes())
     write_flat_normal_bc5(os.path.join(MOD_DIR, "Textures", "GEE_Normal.ktx2"))
@@ -509,14 +507,14 @@ def main():
             '    </PartModel>',
             '  </StaticObject>']
     i += 1
-    # Round asphalt pads over road junctions (Buildings.JunctionVariant): plain asphalt, ground surface markers.
-    xml += ktx_material(i, "road junction", junction_pad_images(), "GEE_RoadDisc")
-    i += 1
-    # One-way motorway and trunk carriageways (Buildings.HighwayVariant), then streets and ramps (StreetVariant,
-    # RampVariant), all from the Poly Haven scan like the road (variant 8).
-    for profile in ("highway", "street", "ramp"):
+    # Road surfaces after the crew arm, in the order of Buildings.RoadPlainVariant, HighwayVariant, StreetVariant
+    # and RampVariant; Poly Haven scans like the road (variant 8).
+    for profile in ("road plain", "highway", "street", "ramp"):
         xml += ktx_material(i, profile, road_profile_images(profile), "GEE_ScannedSlab")
         i += 1
+    # Tracks and unpaved roads (Buildings.TrackVariant).
+    xml += ktx_material(i, "track", road_profile_images("track"), "GEE_ScannedSlab")
+    i += 1
     xml.append("</Assets>")
     with open(os.path.join(MOD_DIR, "Assets.xml"), "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(xml) + "\n")

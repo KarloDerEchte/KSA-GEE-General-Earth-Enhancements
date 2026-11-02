@@ -55,6 +55,7 @@ public static class VectorTile
         Pipelines.AddTo(result, z, x, y);
         Structures.AddTo(result, z, x, y);
         RoadMerges.Apply(result.Roads, options.PlanetRadius);
+        RoadBridges.Apply(result.Roads, options.PlanetRadius, Placement.BridgeClearance);
         RoadJunctions.Find(result.Roads);
         return result;
     }

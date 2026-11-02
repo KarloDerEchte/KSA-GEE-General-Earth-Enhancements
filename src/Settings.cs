@@ -52,6 +52,11 @@ public sealed class Settings
     /// brings the removed ones back after the game is loaded again.
     /// </summary>
     public bool RealisticTrees { get; set; } = true;
+    /// <summary>
+    /// Mixes the trees of the Low Poly Forest Tree Pack into the game's trees (TreePack.cs). Takes effect at the
+    /// next game start (the game builds its clutter objects once).
+    /// </summary>
+    public bool ForestTreePack { get; set; } = true;
     /// <summary>Main-thread time per frame spent handing clutter exclusions to the game.</summary>
     public double ClutterBudgetMs { get; set; } = 1.5;
 
@@ -87,6 +92,18 @@ public sealed class Settings
     /// </summary>
     public bool SatelliteImagery { get; set; } = true;
     public double SatelliteFadeFromM { get; set; } = 1500;
+
+    /// <summary>
+    /// Colours the game's terrain with the satellite imagery at every height (the game's ground textures keep their
+    /// detail, the photo gives the colour), so fields, dry ground, forests and town edges show near the ground too.
+    /// Takes effect at the next game start (the terrain shader is patched when the game compiles it).
+    /// </summary>
+    public bool GroundColorFromSatellite { get; set; } = true;
+    /// <summary>How much of the photo's colour the terrain takes (0 to 1).</summary>
+    public double GroundColorStrength { get; set; } = 0.85;
+
+    /// <summary>Buildings, roofs and tanks cast shadows from the sun (within the game's 1.5 km shadow range).</summary>
+    public bool BuildingShadows { get; set; } = true;
 
     /// <summary>Vapour boiling off the cryogenic tanks of launch complexes.</summary>
     public bool TankVapor { get; set; } = true;

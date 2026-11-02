@@ -223,7 +223,7 @@ internal static class SatelliteImagery
         if (viewport != Program.MainViewport)
             return;
         LastTiles = 0;
-        if (Settings is not { Enabled: true, SatelliteImagery: true } settings)
+        if (Settings is not { Enabled: true } settings || !(settings.SatelliteImagery || GroundTint.Active))
             return;
         if (Universe.CurrentSystem is not { } system || !system.All.TryGet(settings.Body, out Astronomical? astronomical)
             || astronomical is not Celestial body)
@@ -245,13 +245,20 @@ internal static class SatelliteImagery
             LastError = e.Message;
             Log.Error($"satellite imagery: {e}");
             settings.SatelliteImagery = false;
+            GroundTint.Fail(e.Message);
         }
     }
+
+    private static double _cameraLat, _cameraLon, _planetRadius;
+    /// <summary>Counts changes of the loaded layers, so the ground colour table is only rebuilt after one.</summary>
+    private static long _layerVersion;
+
+    private static int LoadedLayer(int z, int x, int y) => Layer.TryGetValue((z, x, y), out int layer) ? layer : -1;
 
     /// <summary>Main thread, before the frame is recorded: puts decoded tiles into free layers, in one submission.</summary>
     public static void Upload()
     {
-        if (Settings is not { Enabled: true, SatelliteImagery: true })
+        if (Settings is not { Enabled: true } settings || !(settings.SatelliteImagery || GroundTint.Active))
             return;
         try
         {
@@ -264,8 +271,6 @@ internal static class SatelliteImagery
                     return;
                 _inFlight = false;
             }
-            if (Decoded.IsEmpty)
-                return;
             CommandBuffer cb = default;
             bool started = false;
             int done = 0;
@@ -292,12 +297,29 @@ internal static class SatelliteImagery
                 lock (Lock)
                     Pending.Remove(key);
                 done++;
+                _layerVersion++;
+            }
+            // The ground colour table after this batch's layers: in the same submission, so no frame sees a table
+            // naming a layer that now holds another tile.
+            if (GroundTint.Active && GroundTint.HasTexture && _planetRadius > 0
+                && GroundTint.Build(_cameraLat, _cameraLon, _planetRadius, settings, _layerVersion, LoadedLayer))
+            {
+                if (!started)
+                {
+                    cb = staging.NextCommandBuffer();
+                    cb.Begin(VkCommandBufferUsageFlags.OneTimeSubmitBit);
+                    started = true;
+                }
+                GroundTint.RecordUpload(cb, staging);
             }
             if (started)
             {
                 cb.End();
                 staging.Submit();
                 _inFlight = true;
+                // The table's first contents are now ahead of every later frame in the queue.
+                if (GroundTint.Active)
+                    GroundTint.Bind(_texture!);
             }
             LoadedLayers = Layer.Count;
         }
@@ -306,6 +328,7 @@ internal static class SatelliteImagery
             LastError = e.Message;
             Log.Error($"satellite imagery upload: {e}");
             Settings!.SatelliteImagery = false;
+            GroundTint.Fail(e.Message);
         }
     }
 
@@ -348,6 +371,8 @@ internal static class SatelliteImagery
                 Image = _texture.VkImage,
                 SubresourceRange = new VkImageSubresourceRange { AspectMask = VkImageAspectFlags.ColorBit, LevelCount = 1, LayerCount = Layers },
             }));
+        if (GroundTint.Active)
+            GroundTint.CreateTexture(renderer, cb);
         cb.End();
         _staging.Submit();
         _staging.Wait();
@@ -404,8 +429,15 @@ internal static class SatelliteImagery
         double camR = Math.Sqrt(double3.Dot(cam, cam));
         double planetR = body.MeanRadius;
         double altitude = camR - planetR;
-        float fade = Smooth(settings.SatelliteFadeFromM, settings.SatelliteFadeFromM * 4, altitude);
-        if (fade <= 0)
+        _cameraLat = Math.Asin(Math.Clamp(cam.Z / camR, -1, 1));
+        _planetRadius = planetR;
+        _cameraLon = Math.Atan2(cam.Y, cam.X);
+        // The drape fades in with altitude; the ground colour (GroundTint) needs the same tiles at every height. With
+        // the ground colour the terrain itself shows the photo (lit by the game), and a drape over it only showed
+        // where the terrain poked through it, in bands along the slopes: then there is no drape.
+        float fade = settings.SatelliteImagery && !GroundTint.Active
+            ? Smooth(settings.SatelliteFadeFromM, settings.SatelliteFadeFromM * 4, altitude) : 0;
+        if (fade <= 0 && !GroundTint.Active)
             return 0;
         doubleQuat ccf2Cce = body.GetCcf2Cce();
         double3 rx = Double3Ex.Transform(new double3(1, 0, 0), ccf2Cce);
@@ -509,6 +541,10 @@ internal static class SatelliteImagery
             ay >>= 1;
             az--;
         }
+        // The ground colour compares each tile with the one 16 times coarser: keep that one coming too.
+        if (GroundTint.Active && z - 4 >= MinZoom && !Layer.ContainsKey((z - 4, x >> 4, y >> 4)))
+            lock (Lock)
+                Wanted.TryAdd((z - 4, x >> 4, y >> 4), dist);
         if (az != z)
             lock (Lock)
             {
@@ -517,6 +553,10 @@ internal static class SatelliteImagery
                 if (z > MinZoom && !Layer.ContainsKey((z - 1, x >> 1, y >> 1)))
                     Wanted.TryAdd((z - 1, x >> 1, y >> 1), dist);
             }
+        if (layer >= 0)
+            LayerUsed[layer] = _frame;                                  // drawn by the drape or the ground colour
+        if (fade <= 0)
+            return;                                                    // ground colour only: no drape, no heights
         bool ownHeights = HeightCache.TryGetValue(key, out TileHeights? own);
         if (!ownHeights)
             HeightWanted.Add((key, dist));
@@ -537,6 +577,11 @@ internal static class SatelliteImagery
         double3 egoCenter = Rotate(rel + centerDir * low, rx, ry, rz);
         double3 eE = Rotate(east, rx, ry, rz), eN = Rotate(north, rx, ry, rz), eU = Rotate(centerDir, rx, ry, rz);
         float light = sun is { } sd ? (float)Math.Clamp(0.1 + 1.15 * double3.Dot(centerDir, sd), 0.02, 1.0) : 1f;
+        // On the night side the photo would only lay a dark veil over the buildings, roads and their lights: it
+        // fades out from about 10 degrees of sun to the terminator.
+        fade *= Smooth(0.1, 0.32, light);
+        if (fade <= 0)
+            return;
         var (bs, bw, bn, be) = VectorTile.Bounds(z, x, y);
         double lat0 = (bs + bn) / 2 * Math.PI / 180, lon0 = (bw + be) / 2 * Math.PI / 180;
         // Height the drape must clear: the terrain rising between the height samples (measured when sampled) plus

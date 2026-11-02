@@ -66,6 +66,8 @@ internal static class ShaderPatch
     private static byte[] ReadShader(string path)
     {
         byte[] bytes = File.ReadAllBytes(path);
+        if (path.Replace('\\', '/').EndsWith("Planet/Planet.frag", StringComparison.OrdinalIgnoreCase))
+            return PatchPlanet(path, bytes);
         if (!path.EndsWith(ShaderFile, StringComparison.OrdinalIgnoreCase))
             return bytes;
         try
@@ -103,6 +105,30 @@ internal static class ShaderPatch
         catch (Exception e)
         {
             Log.Error($"shader patch: {e.Message}");
+            return bytes;
+        }
+    }
+
+    /// <summary>The terrain shader with the satellite ground colour (GroundTint), if it is switched on.</summary>
+    private static byte[] PatchPlanet(string path, byte[] bytes)
+    {
+        try
+        {
+            if (SatelliteImagery.Settings is not { Enabled: true, GroundColorFromSatellite: true } || !GroundTint.Reserve())
+                return bytes;
+            string source = Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n");
+            if (GroundTint.PatchPlanet(source) is not { } patched)
+            {
+                Log.Error($"shader patch: {path} has changed, the ground keeps the game's colours");
+                GroundTint.Fail("the game's terrain shader has changed");
+                return bytes;
+            }
+            Log.Notice($"shader patch: {path} patched (ground colour)");
+            return Encoding.UTF8.GetBytes(patched);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"shader patch (ground colour): {e.Message}");
             return bytes;
         }
     }

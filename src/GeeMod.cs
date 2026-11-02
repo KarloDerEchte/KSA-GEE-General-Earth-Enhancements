@@ -42,6 +42,8 @@ public class GeeMod
         AutoShot.Tick(dtPlayer, _dir, _settings.Body, _settings.SunId);
         using (Perf.Measure("satellite upload"))
             SatelliteImagery.Upload();
+        // Collected again when the buildings are rendered this frame; never drawn from an old camera position.
+        ShadowCasters.Clear();
         if (_manager == null)
             return;
         double now = _clock.Elapsed.TotalSeconds;
@@ -122,6 +124,7 @@ public class GeeMod
             GlowRenderer.Global = _global;
             SatelliteImagery.Settings = _settings;
             SatelliteImagery.ModDir = _dir;
+            TreePack.Settings = _settings;
             _harmony = new Harmony("GEE");
             Patches.Apply(_harmony);
             Log.Info($"started, data dir {_dir}");
@@ -208,6 +211,27 @@ public class GeeMod
             if (ImGui.Checkbox("Satellite imagery from altitude (Sentinel-2 cloudless, EOX)", ref satellite))
             {
                 _settings.SatelliteImagery = satellite;
+                Changed();
+            }
+            bool groundColour = _settings.GroundColorFromSatellite;
+            if (ImGui.Checkbox("Ground colour from satellite imagery (next game start)", ref groundColour))
+            {
+                _settings.GroundColorFromSatellite = groundColour;
+                Changed();
+            }
+            if (_settings.GroundColorFromSatellite)
+            {
+                float strength = (float)_settings.GroundColorStrength;
+                if (ImGui.SliderFloat("Ground colour strength", ref strength, 0f, 1f, "%.2f"))
+                {
+                    _settings.GroundColorStrength = strength;
+                    Changed();
+                }
+            }
+            bool shadows = _settings.BuildingShadows;
+            if (ImGui.Checkbox("Building shadows", ref shadows))
+            {
+                _settings.BuildingShadows = shadows;
                 Changed();
             }
             bool far = _settings.FarBuildings;
@@ -319,6 +343,14 @@ public class GeeMod
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Removes the game's trees from water, fields, rock and snow. Turning it off brings them back after loading the game again.\n"
                     + "Land cover: © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium (CC BY 4.0)");
+            bool treePack = _settings.ForestTreePack;
+            if (ImGui.Checkbox("Mix in forest tree pack (needs restart)", ref treePack))
+            {
+                _settings.ForestTreePack = treePack;
+                Changed();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Adds the trees of \"Low Poly Forest Tree Pack\" by 99.Miles (CC BY 4.0) to the game's trees.");
             bool lights = _settings.NightLights;
             if (ImGui.Checkbox("Night lights", ref lights))
             {
@@ -438,6 +470,10 @@ public class GeeMod
         }
         if (_settings.SatelliteImagery)
             ImGui.Text($"Satellite: {SatelliteImagery.LastTiles} tiles drawn, {SatelliteImagery.LoadedLayers} loaded");
+        if (_settings.GroundColorFromSatellite)
+            ImGui.Text($"Ground colour: {GroundTint.Status}");
+        if (_settings.BuildingShadows)
+            ImGui.Text($"Shadow casters: {ShadowCasters.LastCount:N0}{(ShadowCasters.Error is { } se ? $" (off: {se})" : "")}");
         if (_settings.ClearClutter)
             ImGui.Text($"Clutter removed: {manager.Clutter.Excluded:N0} ({manager.Clutter.Status})");
         if (_settings.RealisticTrees && manager.Clutter.TreeCoverError is { } treeError)

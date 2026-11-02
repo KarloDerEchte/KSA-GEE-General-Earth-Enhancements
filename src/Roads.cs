@@ -22,20 +22,26 @@ public sealed class RawRoad
     public Airfield Airfield;
     /// <summary>Points where other roads meet this one (RoadJunctions): bends there are not rounded off.</summary>
     public bool[]? Fixed;
-    /// <summary>Round pads this road lays over junctions at its points (RoadJunctions); one road per junction.</summary>
-    public List<JunctionPad>? Pads;
+    /// <summary>
+    /// At junction points (RoadJunctions): how far along the road on either side Placement lays plain asphalt without
+    /// lines (Buildings.PlainVariant), about as far as the other roads there reach.
+    /// </summary>
+    public double[]? Clear;
     /// <summary>Which surface and markings the road gets (Buildings.SurfaceVariant).</summary>
     public RoadSurface Surface;
+    /// <summary>A bridge over another road (RoadBridges): the whole deck at Placement.BridgeClearance, with pillars.</summary>
+    public bool Overpass;
+    /// <summary>Where along an overpass (metres from its first point) pillars stand.</summary>
+    public List<double>? Pillars;
+    /// <summary>Approach to an overpass (RoadBridges): height above the ground at the start or end, falling to none over RampLength.</summary>
+    public double RampStart, RampEnd, RampLength;
 }
 
 /// <summary>
 /// Road surfaces, each a scan-based material with its own markings (make_assets.py ROAD_PROFILES): main roads with
-/// edge and centre lines, unmarked streets, one-lane ramps with edge lines, and highway carriageways.
+/// edge and centre lines, unmarked streets, one-lane ramps with edge lines, highway carriageways, and unpaved tracks.
 /// </summary>
-public enum RoadSurface { Road, Street, Ramp, Highway }
-
-/// <summary>A round asphalt pad over the junction at a road's point: radius in metres, surface lift above the terrain.</summary>
-public readonly record struct JunctionPad(int Point, double Radius, double Lift);
+public enum RoadSurface { Road, Street, Ramp, Highway, Track }
 
 public enum Airfield { None, Runway, Taxiway }
 
@@ -56,6 +62,10 @@ public static class Roads
         string? service = tags.GetValueOrDefault("service") as string;
         if (brunnel == "tunnel")
             return null;
+        object? bridgeTag = tags.GetValueOrDefault("bridge");
+        bool bridge = brunnel == "bridge"
+            || bridgeTag is string value && value is not ("" or "no" or "false" or "0")
+            || bridgeTag is true;
         (double width, int rank) = cls switch
         {
             // Pedestrian zones are street-wide; footways and cycleways are left out.
@@ -86,11 +96,13 @@ public static class Roads
         // Ramps lie under the carriageway they merge into (RoadMerges slides their ends under its edge).
         if (ramp && cls is "motorway" or "trunk")
             rank--;
+        bool unpaved = cls == "track" || tags.GetValueOrDefault("surface") as string == "unpaved";
         var surface = highway ? RoadSurface.Highway
             : ramp && cls is "motorway" or "trunk" ? RoadSurface.Ramp
+            : unpaved ? RoadSurface.Track
             : rank <= 1 ? RoadSurface.Street
             : RoadSurface.Road;
-        return (width, rank, brunnel == "bridge", cls is not ("service" or "track"), surface);
+        return (width, rank, bridge, cls is not ("service" or "track"), surface);
     }
 
     /// <summary>Lift for a road of the given class; tie picks one of TieLevels sub-levels.</summary>

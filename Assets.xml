@@ -381,7 +381,7 @@
       <Material Id="GEE_Fss_Material" />
     </PartModel>
   </StaticObject>
-  <!-- variant 32: road junction -->
+  <!-- variant 32: road plain -->
   <PbrMaterial Id="GEE_V32_Material">
     <Diffuse Path="Textures/GEE_V32_Diffuse.ktx2" Category="Vessel" />
     <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
@@ -389,7 +389,7 @@
   </PbrMaterial>
   <StaticObject Id="GEE_Box32">
     <PartModel Id="GEE_Box32_Model">
-      <Mesh Id="GEE_RoadDisc" />
+      <Mesh Id="GEE_ScannedSlab" />
       <Material Id="GEE_V32_Material" />
     </PartModel>
   </StaticObject>
@@ -427,6 +427,18 @@
     <PartModel Id="GEE_Box35_Model">
       <Mesh Id="GEE_ScannedSlab" />
       <Material Id="GEE_V35_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- variant 36: track -->
+  <PbrMaterial Id="GEE_V36_Material">
+    <Diffuse Path="Textures/GEE_V36_Diffuse.ktx2" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
+    <AoRoughMetal Path="Textures/GEE_V36_PBR.ktx2" Category="Vessel" />
+  </PbrMaterial>
+  <StaticObject Id="GEE_Box36">
+    <PartModel Id="GEE_Box36_Model">
+      <Mesh Id="GEE_ScannedSlab" />
+      <Material Id="GEE_V36_Material" />
     </PartModel>
   </StaticObject>
 </Assets>

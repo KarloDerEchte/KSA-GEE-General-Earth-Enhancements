@@ -35,6 +35,6 @@
     <Reference Include="0Harmony"><HintPath>$(StarMapDir)0Harmony.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="GeeMod.cs;Log.cs;Settings.cs;Buildings.cs;Roads.cs;VectorTile.cs;Footprint.cs;Placement.cs;Clutter.cs;ClutterClearing.cs;NightLights.cs;InstancedPass.cs;FacadeTechnique.cs;Tiles.cs;NetLoader.cs;BuildingRenderer.cs;Patches.cs;LightSet.cs;GlowTechnique.cs;GlowRenderer.cs;RegionalLights.cs;Landmarks.cs;AutoShot.cs;BuildingDetail.cs;Pipelines.cs;PipelineData.cs;Structures.cs;StructureData.cs;BuiltUp.cs;PublicLamps.cs;CrewArm.cs;Vapor.cs;FarField.cs;Satellite.cs;Perf.cs;ShaderPatch.cs;RoadJunctions.cs;RoadMerges.cs;WorldCover.cs;TreeCover.cs" />
+    <Compile Include="GeeMod.cs;Log.cs;Settings.cs;Buildings.cs;Roads.cs;VectorTile.cs;Footprint.cs;Placement.cs;Clutter.cs;ClutterClearing.cs;NightLights.cs;InstancedPass.cs;FacadeTechnique.cs;Tiles.cs;NetLoader.cs;BuildingRenderer.cs;Patches.cs;LightSet.cs;GlowTechnique.cs;GlowRenderer.cs;RegionalLights.cs;Landmarks.cs;AutoShot.cs;BuildingDetail.cs;Pipelines.cs;PipelineData.cs;Structures.cs;StructureData.cs;BuiltUp.cs;PublicLamps.cs;CrewArm.cs;Vapor.cs;FarField.cs;Satellite.cs;Perf.cs;ShaderPatch.cs;RoadJunctions.cs;RoadMerges.cs;RoadBridges.cs;WorldCover.cs;TreeCover.cs;ShadowCasters.cs;GroundTint.cs;TreePack.cs" />
   </ItemGroup>
 </Project>

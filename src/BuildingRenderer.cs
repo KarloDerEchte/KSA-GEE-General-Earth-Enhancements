@@ -26,6 +26,8 @@ internal static class BuildingRenderer
             return;
         if (!string.Equals(celestial.Id, settings.Body, StringComparison.OrdinalIgnoreCase))
             return;
+        if (viewport == Program.MainViewport)
+            ShadowCasters.Clear();
         Tile[] tiles = manager.Snapshot;
         // The far field can be all there is (high up, or before the detailed tiles are in).
         if ((tiles.Length == 0 && (Far == null || Far.Snapshot.Length == 0)) || !ResolveModels())
@@ -224,7 +226,7 @@ internal static class BuildingRenderer
     done:
         selectScope.Dispose();
         using (Perf.Measure("  emit"))
-            Emit(drawn, viewport, camCcf, rx, ry, rz);
+            Emit(drawn, viewport, camCcf, rx, ry, rz, main && settings.BuildingShadows);
         if (showComplex)
             CrewArm.Render(Models[Buildings.CrewArmVariant]!, viewport, camCcf, rx, ry, rz, maxDist);
         NightLights.Emit(viewport, camCcf, rx, ry, rz, night, settings);
@@ -275,6 +277,8 @@ internal static class BuildingRenderer
     private static int[] _selSlot = Array.Empty<int>();
     private static float[] _selWalls = Array.Empty<float>();
     private static int[] _selWallSlot = Array.Empty<int>();
+    private static byte[] _shadowKind = Array.Empty<byte>();
+    private static float[] _shadowDist = Array.Empty<float>();
     private static StaticObjectModel.PerInstanceData[] _out = Array.Empty<StaticObjectModel.PerInstanceData>();
     private static readonly int[] VariantStart = new int[Buildings.VariantCount + 1];
     private static readonly int[] VariantCursor = new int[Buildings.VariantCount];
@@ -290,6 +294,8 @@ internal static class BuildingRenderer
         _selSlot = new int[budget];
         _selWalls = new float[budget];
         _selWallSlot = new int[budget];
+        _shadowKind = new byte[budget];
+        _shadowDist = new float[budget];
         _out = new StaticObjectModel.PerInstanceData[budget];
     }
 
@@ -306,7 +312,7 @@ internal static class BuildingRenderer
     /// Model matrices of the selected instances, worked out on all cores into one array grouped by model, then
     /// copied into each model's instance list at once (one AddInstance per box was most of the cost in a city).
     /// </summary>
-    private static void Emit(int n, IViewport viewport, double3 camCcf, double3 rx, double3 ry, double3 rz)
+    private static void Emit(int n, IViewport viewport, double3 camCcf, double3 rx, double3 ry, double3 rz, bool shadows)
     {
         if (n == 0)
             return;
@@ -334,10 +340,21 @@ internal static class BuildingRenderer
             for (int j = from; j < to; j++)
             {
                 ref BuildingInstance b = ref _selArray[j][_selIndex[j]];
-                _out[_selSlot[j]] = new StaticObjectModel.PerInstanceData { ModelMatrix = Placement.ModelToEgo(in b, camCcf, rx, ry, rz) };
+                double pull = b.IsRoad ? Placement.FlatPull(in b, camCcf) : 1;
+                _out[_selSlot[j]] = new StaticObjectModel.PerInstanceData { ModelMatrix = Placement.ModelToEgo(in b, camCcf, rx, ry, rz, pull) };
                 int w = _selWallSlot[j];
                 if (w >= 0 && w < wallFits)
                     wallArray[wallStart + w] = FacadeRenderer.Make(in b, camCcf, rx, ry, rz, _selWalls[j]);
+                byte kind = shadows && !b.IsRoad ? ShadowCasters.KindOf(b.Variant) : ShadowCasters.None;
+                if (kind != ShadowCasters.None)
+                {
+                    double3 d = b.Center - camCcf;
+                    double dist = Math.Sqrt(double3.Dot(d, d));
+                    _shadowDist[j] = (float)dist;
+                    if (dist > ShadowCasters.RangeM)
+                        kind = ShadowCasters.None;
+                }
+                _shadowKind[j] = kind;
             }
         }
         if (n <= Chunk)
@@ -345,6 +362,9 @@ internal static class BuildingRenderer
         else
             Parallel.For(0, (n + Chunk - 1) / Chunk, c => Work(c * Chunk, Math.Min(n, (c + 1) * Chunk)));
         Array.Clear(_selArray, 0, n);                                   // no references kept to dropped tiles
+        if (shadows)
+            using (Perf.Measure("  shadow casters"))
+                ShadowCasters.Collect(n, _shadowKind, _shadowDist, _out, _selSlot);
 
         for (int v = 0; v < Buildings.VariantCount; v++)
         {

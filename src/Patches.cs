@@ -32,6 +32,18 @@ internal static class Patches
             Log.Error($"glow patch failed: {e.Message}");
         }
 
+        // Optional: without it buildings cast no shadows.
+        try
+        {
+            harmony.Patch(
+                AccessTools.Method(typeof(KSA.Rendering.Lighting.CascadedShadowSystem), nameof(KSA.Rendering.Lighting.CascadedShadowSystem.EndCascade)),
+                prefix: new HarmonyMethod(typeof(Patches), nameof(BeforeEndCascade)));
+        }
+        catch (Exception e)
+        {
+            Log.Error($"shadow patch failed: {e.Message}");
+        }
+
         // Optional: without it the window is still reachable through settings.json.
         try
         {
@@ -42,6 +54,16 @@ internal static class Patches
         catch (Exception e)
         {
             Log.Error($"menu patch failed: {e.Message}");
+        }
+
+        // Optional: without it Earth has only the game's own trees.
+        try
+        {
+            TreePack.Apply(harmony);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"tree pack patch failed: {e.Message}");
         }
 
         // Optional: without it tree colliders already loaded around vessels stay until their cell reloads.
@@ -55,6 +77,14 @@ internal static class Patches
         {
             Log.Error($"clutter exclusion patch failed: {e.Message}");
         }
+    }
+
+    private static void BeforeEndCascade(KSA.Rendering.Lighting.CascadedShadowSystem __instance, CommandBuffer inCmdBuffer, int inCascade)
+    {
+        if (Program.RenderedViewport != Program.MainViewport)
+            return;
+        using (Perf.Measure("shadows"))
+            ShadowCasters.DrawCascade(__instance, inCmdBuffer, inCascade);
     }
 
     private static void AfterPendingExclusions(List<BubbleClutterStatics.ClutterRemoval> destination)
@@ -115,6 +145,7 @@ internal static class Patches
         try
         {
             FacadeRenderer.RebuildFrameResources();
+            ShadowCasters.Dispose();
             VaporRenderer.RebuildFrameResources();
             SatelliteImagery.RebuildFrameResources();
             GlowRenderer.RebuildFrameResources();

@@ -15,11 +15,13 @@ down from altitude.
 ## Features
 
 - **Buildings and roads** from OpenStreetMap vector tiles, streamed around the camera and cached on disk. Buildings
-  get facades, roofs, details nearby and a window pass. Roads are laid exactly on the terrain. The game's trees and
+  get facades, roofs, details nearby and a window pass, and cast shadows in the sun. Roads are laid exactly on the
+  terrain, with lane markings, clean junctions, motorway ramps and bridges over the roads below. The game's trees and
   shrubs are cleared from roads and buildings.
 - **Far field**: simplified buildings out to tens of kilometres, so cities stay visible after launch.
 - **Night**: lit windows, street lights in towns, and city lights visible from orbit.
-- **Satellite imagery** (Sentinel-2 cloudless, 2016) draped over the ground when seen from altitude.
+- **Satellite imagery** (Sentinel-2 cloudless, 2016) draped over the ground when seen from altitude, and the game's
+  own terrain coloured from it at every height, so fields, dry ground and forests show near the ground too.
 - **Trees where real forests are**: the game's trees, shrubs and grass are kept only where ESA WorldCover land cover
   says they grow, with a few lone trees in open land; none on water, fields, rock or snow.
 - **More kinds of trees**: spruces, pines, birches, an autumn poplar and shrubs from a tree pack are mixed into
@@ -39,7 +41,7 @@ down from altitude.
 2. Download the zip of the latest release from the
    [Releases page](https://github.com/KarloDerEchte/KSA-GEE-General-Earth-Enhancements/releases) and extract it
    so that you have
-   `Documents/My Games/Kitten Space Agency/mods/GEE/` with `mod.toml`, `GEE.dll`, `Assets.xml`,
+   `Documents/My Games/Kitten Space Agency/mods/GEE/` with `mod.toml`, `GEE.dll`, `Assets.xml`, `Trees.xml`,
    `Meshes/` and `Textures/` in it.
 3. Start the game through StarMap. The mod window is in the mods menu.
 
@@ -62,11 +64,15 @@ imagery and the launch complex.
 | `Roofs`, `BuildingDetails`, `Windows` | on | Pitched roofs, details near the camera (doors, cornices, roof units), window pass |
 | `ReflectorPosts` | on | Small posts along unlit roads |
 | `NightLights`, `CityGlow`, `RegionalLights`, `GlobalLights` | on | Point lights near the camera, night glow, city lights from orbit |
+| `BuildingShadows` | on | Buildings, roofs and tanks cast sun shadows (within the game's 1.5 km shadow range) |
 | `ClearClutter` | on | Removes the game's trees and shrubs from roads and buildings |
+| `RealisticTrees` | on | Keeps the game's trees, shrubs and grass only where ESA WorldCover says they grow |
+| `ForestTreePack` | on | Mixes the tree pack's trees into the game's trees (next game start) |
 | `LoadRadiusKm`, `RenderDistanceKm` | 3, 15 | How far detailed tiles are loaded and drawn |
 | `MaxInstances` | 150000 | Cap on drawn building pieces; beyond it, distant small buildings thin out |
 | `FarBuildings`, `FarRadiusKm` | on, 35 | Simplified far buildings |
 | `SatelliteImagery`, `SatelliteFadeFromM` | on, 1500 | Satellite imagery from altitude, fading in above this height |
+| `GroundColorFromSatellite`, `GroundColorStrength` | on, 0.85 | Colours the game's terrain from the satellite imagery at every height (next game start) |
 | `StreetLights` | `BuiltUp` | `BuiltUp` (lit in towns, from building density), `Data` (OpenStreetMap lamps, see below), `All`, `None` |
 | `StreetLightOverpassUrls` | overpass-api.de | Overpass servers for `Data` mode, comma separated |
 | `TankVapor` | on | Vapour over the launch complex tank farms |

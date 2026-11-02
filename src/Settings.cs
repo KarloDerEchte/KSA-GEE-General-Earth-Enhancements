@@ -8,6 +8,8 @@ public sealed class Settings
     public bool Enabled { get; set; } = true;
     public bool ShowWindow { get; set; } = true;
     public string Body { get; set; } = "Earth";
+    /// <summary>Progress and timing lines in the game's log, and statistics in the window. Errors are always logged.</summary>
+    public bool DebugLogging { get; set; }
 
     /// <summary>Tiles are requested while the camera is below this altitude (and above the ground).</summary>
     public double MaxCameraAltitudeKm { get; set; } = 20;

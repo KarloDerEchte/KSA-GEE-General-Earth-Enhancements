@@ -66,6 +66,7 @@ imagery and the launch complex.
 | `StreetLights` | `BuiltUp` | `BuiltUp` (lit in towns, from building density), `Data` (OpenStreetMap lamps, see below), `All`, `None` |
 | `StreetLightOverpassUrls` | overpass-api.de | Overpass servers for `Data` mode, comma separated |
 | `TankVapor` | on | Vapour over the launch complex tank farms |
+| `DebugLogging` | off | Statistics in the window and progress lines in the game's log (errors are always logged); also "Debug" in the GEE menu |
 
 ### Street light data (optional)
 

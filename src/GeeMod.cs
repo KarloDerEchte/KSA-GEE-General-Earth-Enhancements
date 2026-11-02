@@ -107,6 +107,7 @@ public class GeeMod
             _dir = Path.GetDirectoryName(typeof(GeeMod).Assembly.Location)!;
             _settingsPath = Path.Combine(_dir, "settings.json");
             _settings = Settings.Load(_settingsPath);
+            Log.Debug = _settings.DebugLogging;
             _padRadiusAtLoad = _settings.LaunchPadClearRadiusKm;
             _manager = new TileManager(_settings, _dir);
             _regional = new RegionalLights(_settings, _manager, RegionalLights.RegionalZoom);
@@ -136,6 +137,13 @@ public class GeeMod
 
     private void Changed() => _settingsChangedAt = _clock.Elapsed.TotalSeconds;
 
+    private void SetDebug(bool debug)
+    {
+        _settings.DebugLogging = debug;
+        Log.Debug = debug;
+        Changed();
+    }
+
     internal void DrawMenu()
     {
         if (!ImGui.BeginMenu("GEE"))
@@ -153,6 +161,9 @@ public class GeeMod
             _settings.Enabled = enabled;
             Changed();
         }
+        bool debug = _settings.DebugLogging;
+        if (ImGui.MenuItem("Debug", default(ImString), ref debug))
+            SetDebug(debug);
         ImGui.EndMenu();
     }
 
@@ -199,8 +210,6 @@ public class GeeMod
                 _settings.SatelliteImagery = satellite;
                 Changed();
             }
-            if (_settings.SatelliteImagery)
-                ImGui.Text($"Satellite: {SatelliteImagery.LastTiles} tiles drawn, {SatelliteImagery.LoadedLayers} loaded{(SatelliteImagery.LastError is { } se ? ", " + se : "")}");
             bool far = _settings.FarBuildings;
             if (ImGui.Checkbox("Far buildings (simplified, beyond the loaded tiles)", ref far))
             {
@@ -212,11 +221,6 @@ public class GeeMod
             {
                 _settings.FarRadiusKm = farRadius;
                 Changed();
-            }
-            if (_far != null)
-            {
-                var fs = _far.Stats();
-                ImGui.Text($"Far field: {fs.Ready} tiles, {fs.Buildings:N0} buildings, {fs.Pending} loading");
             }
             bool buildings = _settings.ShowBuildings;
             if (ImGui.Checkbox("Show buildings (OpenStreetMap)", ref buildings))
@@ -369,41 +373,15 @@ public class GeeMod
                     + "settings.json). The public servers are shared and slow: prefer your own instance. Press Reload tiles after a change.");
 
             ImGui.Separator();
-            var stats = manager.Stats();
-            if (double.IsNaN(manager.CameraAltitudeKm))
-                ImGui.Text($"Waiting for {_settings.Body}...");
-            else
-                ImGui.Text($"Camera {manager.CameraLat:0.0000}, {manager.CameraLon:0.0000}  alt {manager.CameraAltitudeKm:0.0} km");
-            if (!manager.Streaming && _settings.Enabled)
-                ImGui.TextDisabled($"Not loading: camera above {_settings.MaxCameraAltitudeKm:0} km");
-            ImGui.Text($"Tiles: {stats.Ready} ready, {stats.Placing} placing, {stats.Loading} downloading, {stats.Queued} queued, {stats.Failed} failed");
-            ImGui.Text($"Buildings: {stats.Buildings:N0}   roads: {stats.Roads:N0}   drawn pieces: {BuildingRenderer.LastDrawn:N0}");
-            if (_settings.ClearClutter)
-                ImGui.Text($"Clutter removed: {manager.Clutter.Excluded:N0} ({manager.Clutter.Status})");
-            if (_settings.LaunchPadClearRadiusKm > 0)
-                ImGui.TextDisabled($"No buildings within {_settings.LaunchPadClearRadiusKm:0.#} km of {manager.LaunchPadCount} launch pads");
-            if (_settings.NightLights)
-                ImGui.Text(NightLights.LastNightFactor > 0 ? $"Night: {NightLights.LastNightFactor:P0}, {NightLights.LastLights} lights on" : "Day: lights off");
-            if (_settings.CityGlow)
-            {
-                ImGui.Text($"Glow: {GlowRenderer.LastSprites:N0} sprites from {GlowRenderer.LastSets} light sets");
-                if (_regional != null && _settings.RegionalLights)
-                {
-                    var r = _regional.Stats();
-                    ImGui.Text(_regional.Active || r.Ready > 0
-                        ? $"City lights: {r.Ready} tiles ({r.Lights:N0} lights), {r.Loading + r.Queued} loading, {r.Failed} failed"
-                        : "City lights: load above 5 km");
-                }
-                if (_global != null && _settings.GlobalLights && (_global.Active || _global.Stats().Ready > 0))
-                {
-                    var g = _global.Stats();
-                    ImGui.Text($"Major cities: {g.Ready} tiles ({g.Lights:N0} lights), {g.Loading + g.Queued} loading, {g.Failed} failed");
-                }
-                if (_settings.Windows)
-                    ImGui.Text($"Windows on {FacadeRenderer.LastBoxes:N0} walls");
-                if (GlowRenderer.Error is { } glowError)
-                    ImGui.TextColored(new float4(1, 0.5f, 0.3f, 1), $"Glow off: {glowError}");
-            }
+            bool debug = _settings.DebugLogging;
+            if (ImGui.Checkbox("Debug (statistics here, progress in the game's log)", ref debug))
+                SetDebug(debug);
+            if (debug)
+                DrawStatistics(manager);
+            if (_settings.SatelliteImagery && SatelliteImagery.LastError is { } satelliteError)
+                ImGui.TextColored(new float4(1, 0.5f, 0.3f, 1), $"Satellite: {satelliteError}");
+            if (_settings.CityGlow && GlowRenderer.Error is { } glowError)
+                ImGui.TextColored(new float4(1, 0.5f, 0.3f, 1), $"Glow off: {glowError}");
             if (BuildingRenderer.ModelsFound < Buildings.VariantCount)
                 ImGui.TextColored(new float4(1, 0.5f, 0.3f, 1), $"Building models missing ({BuildingRenderer.ModelsFound}/{Buildings.VariantCount}), check Assets.xml");
             if (manager.LastError is { } error)
@@ -431,5 +409,51 @@ public class GeeMod
             _settings.ShowWindow = false;
             Changed();
         }
+    }
+
+    private void DrawStatistics(TileManager manager)
+    {
+        var stats = manager.Stats();
+        if (double.IsNaN(manager.CameraAltitudeKm))
+            ImGui.Text($"Waiting for {_settings.Body}...");
+        else
+            ImGui.Text($"Camera {manager.CameraLat:0.0000}, {manager.CameraLon:0.0000}  alt {manager.CameraAltitudeKm:0.0} km");
+        if (!manager.Streaming && _settings.Enabled)
+            ImGui.TextDisabled($"Not loading: camera above {_settings.MaxCameraAltitudeKm:0} km");
+        ImGui.Text($"Tiles: {stats.Ready} ready, {stats.Placing} placing, {stats.Loading} downloading, {stats.Queued} queued, {stats.Failed} failed");
+        ImGui.Text($"Buildings: {stats.Buildings:N0}   roads: {stats.Roads:N0}   drawn pieces: {BuildingRenderer.LastDrawn:N0}");
+        if (_far != null && _settings.FarBuildings)
+        {
+            var fs = _far.Stats();
+            ImGui.Text($"Far field: {fs.Ready} tiles, {fs.Buildings:N0} buildings, {fs.Pending} loading");
+        }
+        if (_settings.SatelliteImagery)
+            ImGui.Text($"Satellite: {SatelliteImagery.LastTiles} tiles drawn, {SatelliteImagery.LoadedLayers} loaded");
+        if (_settings.ClearClutter)
+            ImGui.Text($"Clutter removed: {manager.Clutter.Excluded:N0} ({manager.Clutter.Status})");
+        if (_settings.LaunchPadClearRadiusKm > 0)
+            ImGui.TextDisabled($"No buildings within {_settings.LaunchPadClearRadiusKm:0.#} km of {manager.LaunchPadCount} launch pads");
+        if (_settings.NightLights)
+            ImGui.Text(NightLights.LastNightFactor > 0 ? $"Night: {NightLights.LastNightFactor:P0}, {NightLights.LastLights} lights on" : "Day: lights off");
+        if (_settings.CityGlow)
+        {
+            ImGui.Text($"Glow: {GlowRenderer.LastSprites:N0} sprites from {GlowRenderer.LastSets} light sets");
+            if (_regional != null && _settings.RegionalLights)
+            {
+                var r = _regional.Stats();
+                ImGui.Text(_regional.Active || r.Ready > 0
+                    ? $"City lights: {r.Ready} tiles ({r.Lights:N0} lights), {r.Loading + r.Queued} loading, {r.Failed} failed"
+                    : "City lights: load above 5 km");
+            }
+            if (_global != null && _settings.GlobalLights && (_global.Active || _global.Stats().Ready > 0))
+            {
+                var g = _global.Stats();
+                ImGui.Text($"Major cities: {g.Ready} tiles ({g.Lights:N0} lights), {g.Loading + g.Queued} loading, {g.Failed} failed");
+            }
+            if (_settings.Windows)
+                ImGui.Text($"Windows on {FacadeRenderer.LastBoxes:N0} walls");
+        }
+        if (Perf.Summary.Length > 0)
+            ImGui.TextWrapped("Perf: " + Perf.Summary);
     }
 }

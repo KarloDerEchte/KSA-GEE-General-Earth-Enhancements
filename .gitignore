@@ -1,0 +1,26 @@
+# Local downloads and caches (map tiles, imagery, street light data)
+cache/
+
+# Screenshots and the screenshot harness script
+shots/
+autoshot.txt
+autoshot.done
+
+# Personal settings (written by the mod)
+settings.json
+
+# Build output
+src/obj/
+src/bin/
+src/net/obj/
+src/net/bin/
+*.dll
+*.pdb
+src/tools/__pycache__/
+
+# Editors and OS
+.vs/
+.vscode/
+*.user
+Thumbs.db
+.DS_Store

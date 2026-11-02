@@ -1,0 +1,9 @@
+name = "OsmBuildings"
+description = "OpenStreetMap buildings, roads and lights on Earth, satellite imagery from altitude, and a detailed Launch Complex 39A. Map data (c) OpenStreetMap contributors (ODbL), (c) OpenMapTiles, tiles by OpenFreeMap. Imagery: EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016), CC BY 4.0. LC-39 fixed service structure from the NASA 3D Resources model \"Gantry\" (NASA / Michael D. Carbajal). See NOTICE.md."
+version = "0.2.0"
+author = "OsmBuildings contributors"
+
+assets = [ "Assets.xml" ]
+
+[StarMap]
+EntryAssembly = "OsmBuildings"

@@ -11,9 +11,7 @@ internal sealed class FarTile(int x, int y)
     public readonly int X = x, Y = y;
     public enum Stage { Queued, Loading, Parsed, Placing, Ready, Failed }
     public volatile Stage State = Stage.Queued;
-    public List<(double Lat, double Lon, Box2 Box, double Height, int Variant, uint Seed)>? Raw;
     public float[]? Heights;
-    public int HeightCount, PlaceIndex;
     public BuildingInstance[] Instances = Array.Empty<BuildingInstance>();
     /// <summary>Zoom 14 tile of each instance (TileKey packed as X * 16384 + Y), to leave it out where that is loaded.</summary>
     public int[] NearKeys = Array.Empty<int>();
@@ -57,6 +55,9 @@ internal sealed class FarField : IDisposable
     private double _lastScan = -10;
     private double _planetRadius = 6371000;
     private volatile float _camLat, _camLon;
+    /// <summary>The body the workers place tiles on (set by the main thread before it asks for tiles).</summary>
+    private volatile Celestial? _body;
+    private volatile bool _tilesFinished;
     public volatile FarTile[] Snapshot = Array.Empty<FarTile>();
     public bool Active { get; private set; }
 
@@ -64,9 +65,10 @@ internal sealed class FarField : IDisposable
     {
         _settings = settings;
         _source = source;
-        for (int i = 0; i < 2; i++)
+        // Hundreds of small tiles: several downloads at once. The workers also place them, below normal priority.
+        for (int i = 0; i < 6; i++)
         {
-            var worker = new Thread(WorkerLoop) { IsBackground = true, Name = $"GEE far field {i}" };
+            var worker = new Thread(WorkerLoop) { IsBackground = true, Name = $"GEE far field {i}", Priority = ThreadPriority.BelowNormal };
             _workers.Add(worker);
             worker.Start();
         }
@@ -96,6 +98,7 @@ internal sealed class FarField : IDisposable
         double altitudeKm = (r - _planetRadius) / 1000;
         _camLat = (float)lat;
         _camLon = (float)lon;
+        _body = body;
         Active = _settings.Enabled && _settings.FarBuildings && altitudeKm > -1 && altitudeKm < _settings.FarMaxAltitudeKm;
         if (Active && now - _lastScan > 1)
         {
@@ -103,7 +106,11 @@ internal sealed class FarField : IDisposable
             RequestAround(lat, lon, _settings.FarRadiusKm);
             Evict(lat, lon, _settings.FarRadiusKm * 1.25 + 3);
         }
-        Place(body, _settings.FarPlacementBudgetMs);
+        if (_tilesFinished)
+        {
+            _tilesFinished = false;
+            RebuildSnapshot();
+        }
     }
 
     private static double DistanceKm(FarTile t, double lat, double lon)
@@ -155,7 +162,7 @@ internal sealed class FarField : IDisposable
         {
             foreach (var (key, tile) in _tiles.ToList())
             {
-                if (tile.State != FarTile.Stage.Loading && DistanceKm(tile, lat, lon) > keepKm)
+                if (tile.State is not (FarTile.Stage.Loading or FarTile.Stage.Placing) && DistanceKm(tile, lat, lon) > keepKm)
                 {
                     _tiles.Remove(key);
                     changed |= tile.State == FarTile.Stage.Ready;
@@ -172,75 +179,50 @@ internal sealed class FarField : IDisposable
             Snapshot = _tiles.Values.Where(t => t.State == FarTile.Stage.Ready).ToArray();
     }
 
-    // ---- main thread: terrain and instances ----
+    // ---- worker threads: terrain and instances ----
 
-    private void Place(Celestial body, double budgetMs)
+    /// <summary>Turns a simplified tile into instances, on the worker that loaded it (terrain queries are thread-safe).</summary>
+    private void Place(FarTile tile, List<(double Lat, double Lon, Box2 Box, double Height, int Variant, uint Seed)> raw, Celestial body)
     {
-        long deadline = Stopwatch.GetTimestamp() + (long)(budgetMs * Stopwatch.Frequency / 1000);
-        while (Stopwatch.GetTimestamp() < deadline)
+        const int g = FarTile.GridSize;
+        var (s, w, n, e) = tile.Bounds;
+        var heights = new float[g * g];
+        for (int i = 0; i < g * g; i++)
         {
-            FarTile? tile;
-            lock (_lock)
+            double hLat = n - (n - s) * (i / g) / (g - 1);
+            double hLon = w + (e - w) * (i % g) / (g - 1);
+            heights[i] = (float)body.GetTerrainHeightFromDirCcf(Placement.DirCcf(hLat, hLon));
+        }
+        tile.Heights = heights;
+        tile.Instances = new BuildingInstance[raw.Count];
+        tile.NearKeys = new int[raw.Count];
+        tile.CenterCcf = Placement.DirCcf((s + n) / 2, (w + e) / 2) * _planetRadius;
+        double kmPerDeg = _planetRadius * Math.PI / 180;
+        tile.RadiusM = kmPerDeg * Math.Sqrt(Math.Pow(n - s, 2) + Math.Pow((e - w) * Math.Cos(s * Math.PI / 180), 2)) / 2 + 500;
+        foreach (var (lat, lon, box, height, variant, seed) in raw)
+        {
+            double3 refDir = Placement.DirCcf(lat, lon);
+            Placement.Axes(refDir, out double3 east, out double3 north);
+            double3 up = double3.Normalize(refDir * _planetRadius + east * box.CenterEast + north * box.CenterNorth);
+            double3 a = east * Math.Cos(box.Angle) + north * Math.Sin(box.Angle);
+            a = double3.Normalize(a - up * double3.Dot(a, up));
+            double3 b = double3.Cross(up, a);
+            double ground = Math.Max(tile.HeightAt(lat, lon), 0);
+            const double foot = 3;
+            tile.Instances[tile.Count] = new BuildingInstance
             {
-                float lat = _camLat, lon = _camLon;
-                tile = _tiles.Values.Where(t => t.State is FarTile.Stage.Parsed or FarTile.Stage.Placing)
-                    .OrderBy(t => DistanceKm(t, lat, lon)).FirstOrDefault();
-            }
-            if (tile?.Raw is not { } raw)
-                return;
-            const int g = FarTile.GridSize;
-            var (s, w, n, e) = tile.Bounds;
-            tile.Heights ??= new float[g * g];
-            while (tile.HeightCount < g * g)
-            {
-                if (Stopwatch.GetTimestamp() >= deadline)
-                    return;
-                int i = tile.HeightCount;
-                double hLat = n - (n - s) * (i / g) / (g - 1);
-                double hLon = w + (e - w) * (i % g) / (g - 1);
-                tile.Heights[i] = (float)body.GetTerrainHeightFromDirCcf(Placement.DirCcf(hLat, hLon));
-                tile.HeightCount++;
-            }
-            if (tile.State == FarTile.Stage.Parsed)
-            {
-                tile.Instances = new BuildingInstance[raw.Count];
-                tile.NearKeys = new int[raw.Count];
-                tile.CenterCcf = Placement.DirCcf((s + n) / 2, (w + e) / 2) * _planetRadius;
-                double kmPerDeg = _planetRadius * Math.PI / 180;
-                tile.RadiusM = kmPerDeg * Math.Sqrt(Math.Pow(n - s, 2) + Math.Pow((e - w) * Math.Cos(s * Math.PI / 180), 2)) / 2 + 500;
-                tile.State = FarTile.Stage.Placing;
-            }
-            while (tile.PlaceIndex < raw.Count)
-            {
-                if ((tile.PlaceIndex & 63) == 0 && Stopwatch.GetTimestamp() >= deadline)
-                    return;
-                var (lat, lon, box, height, variant, seed) = raw[tile.PlaceIndex++];
-                double3 refDir = Placement.DirCcf(lat, lon);
-                Placement.Axes(refDir, out double3 east, out double3 north);
-                double3 up = double3.Normalize(refDir * _planetRadius + east * box.CenterEast + north * box.CenterNorth);
-                double3 a = east * Math.Cos(box.Angle) + north * Math.Sin(box.Angle);
-                a = double3.Normalize(a - up * double3.Dot(a, up));
-                double3 b = double3.Cross(up, a);
-                double ground = Math.Max(tile.HeightAt(lat, lon), 0);
-                const double foot = 3;
-                tile.Instances[tile.Count] = new BuildingInstance
-                {
-                    Up = up * (height + foot),
-                    AxisA = a * box.LengthA,
-                    AxisB = b * box.LengthB,
-                    Base = up * (_planetRadius + ground - foot),
-                    Center = up * (_planetRadius + ground),
-                    Variant = variant,
-                    Style = Buildings.StyleNone,
-                    Seed = seed,
-                };
-                var key = TileKey.Of(lat, lon);
-                tile.NearKeys[tile.Count] = key.X * 16384 + key.Y;
-                tile.Count++;
-            }
-            tile.Raw = null;
-            tile.State = FarTile.Stage.Ready;
-            RebuildSnapshot();
+                Up = up * (height + foot),
+                AxisA = a * box.LengthA,
+                AxisB = b * box.LengthB,
+                Base = up * (_planetRadius + ground - foot),
+                Center = up * (_planetRadius + ground),
+                Variant = variant,
+                Style = Buildings.StyleNone,
+                Seed = seed,
+            };
+            var key = TileKey.Of(lat, lon);
+            tile.NearKeys[tile.Count] = key.X * 16384 + key.Y;
+            tile.Count++;
         }
     }
 
@@ -271,8 +253,11 @@ internal sealed class FarField : IDisposable
             try
             {
                 byte[] data = _source.Fetch(FarTile.Zoom, tile.X, tile.Y, out _);
-                tile.Raw = Simplify(data, tile.X, tile.Y);
-                tile.State = FarTile.Stage.Parsed;
+                tile.State = FarTile.Stage.Placing;
+                Place(tile, Simplify(data, tile.X, tile.Y), _body ?? throw new InvalidOperationException("no body to place on"));
+                lock (_lock)
+                    tile.State = FarTile.Stage.Ready;
+                _tilesFinished = true;
             }
             catch (Exception ex)
             {

@@ -46,6 +46,12 @@ public sealed class Settings
     public bool ClearClutter { get; set; } = true;
     /// <summary>Most a tree's trunk keeps away from a road edge or wall; small clutter keeps less.</summary>
     public double TreeClearanceMeters { get; set; } = 3;
+    /// <summary>
+    /// Keeps the game's trees, shrubs and grass only where ESA WorldCover land cover says they grow (forest, shrubland,
+    /// meadows), with a few lone trees in open land; removes them from water, fields, rock and snow. Switching it off
+    /// brings the removed ones back after the game is loaded again.
+    /// </summary>
+    public bool RealisticTrees { get; set; } = true;
     /// <summary>Main-thread time per frame spent handing clutter exclusions to the game.</summary>
     public double ClutterBudgetMs { get; set; } = 1.5;
 
@@ -74,7 +80,6 @@ public sealed class Settings
     public bool FarBuildings { get; set; } = true;
     public double FarRadiusKm { get; set; } = 35;
     public double FarMaxAltitudeKm { get; set; } = 80;
-    public double FarPlacementBudgetMs { get; set; } = 2;
 
     /// <summary>
     /// Sentinel-2 cloudless satellite imagery (EOX, 2016, CC BY 4.0) over the ground when seen from altitude: fades in
@@ -111,8 +116,6 @@ public sealed class Settings
 
     /// <summary>Extra depth below the lowest terrain sample, hides gaps on slopes and terrain mismatches.</summary>
     public double FoundationMeters { get; set; } = 4;
-    /// <summary>Main-thread time per frame spent sampling terrain heights for new buildings.</summary>
-    public double PlacementBudgetMs { get; set; } = 4;
 
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 

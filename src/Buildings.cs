@@ -73,7 +73,26 @@ public static class Buildings
     public static readonly int MetalRoofVariant = TentVariant + 1;
     /// <summary>The swinging crew access arm of LC-39A (CrewArm).</summary>
     public static readonly int CrewArmVariant = MetalRoofVariant + 1;
-    public static readonly int VariantCount = CrewArmVariant + 1;
+    /// <summary>Round asphalt pad over a road junction (RoadJunctions), plain asphalt without lines.</summary>
+    public static readonly int JunctionVariant = CrewArmVariant + 1;
+    /// <summary>One-way motorway and trunk carriageways: Poly Haven asphalt scan with shoulder, lanes and edge lines.</summary>
+    public static readonly int HighwayVariant = JunctionVariant + 1;
+    /// <summary>Unmarked streets and one-lane ramps with edge lines, from the same scan.</summary>
+    public static readonly int StreetVariant = HighwayVariant + 1;
+    public static readonly int RampVariant = StreetVariant + 1;
+    public static readonly int VariantCount = RampVariant + 1;
+
+    public static int SurfaceVariant(RoadSurface surface) => surface switch
+    {
+        RoadSurface.Highway => HighwayVariant,
+        RoadSurface.Street => StreetVariant,
+        RoadSurface.Ramp => RampVariant,
+        _ => RoadVariant,
+    };
+
+    /// <summary>Road pieces (not junction pads or airfield surfaces): these get street lamps.</summary>
+    public static bool IsStreetSurface(int variant) =>
+        variant == RoadVariant || variant == HighwayVariant || variant == StreetVariant || variant == RampVariant;
     /// <summary>Facades of plant and support buildings: concrete, metal, concrete.</summary>
     public static readonly int[] CompoundVariants = { 0, 6, 0 };
 

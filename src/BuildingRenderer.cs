@@ -127,7 +127,7 @@ internal static class BuildingRenderer
                 if (dist2 > (b.IsRoad ? roadDist2 : b.IsDetail ? detailDist2 : maxDist2) || Hidden(in b))
                     continue;
                 // Point lights go to building walls and streets, not to roofs or airfield surfaces.
-                if (dist2 < lightRadius2 && (b.IsRoad ? b.Variant == Buildings.RoadVariant : b.Style != Buildings.StyleNone))
+                if (dist2 < lightRadius2 && (b.IsRoad ? Buildings.IsStreetSurface(b.Variant) : b.Style != Buildings.StyleNone))
                     NightLights.Consider(dist2, tile, i);
             }
         }

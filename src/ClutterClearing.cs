@@ -11,12 +11,14 @@ namespace GEE;
 /// exclusion masks within a time budget. Instances with colliders go through the game's own path for
 /// clutter knocked over by vessels (PhysicsBubble.PopulatePendingExclusions), which also removes colliders
 /// already loaded around vessels; when no vessel bubble asks for exclusions they are applied directly.
+/// Also hands over the masks of TreeCover (trees only where the real world has trees).
 /// </summary>
 internal sealed class ClutterClearing
 {
     public static ClutterClearing? Active;
 
     private readonly Settings _settings;
+    private readonly string _modDir;
     private readonly ConcurrentQueue<BubbleClutterStatics.ClutterRemoval> _viaPhysics = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private double _lastPhysicsSync = double.NegativeInfinity;
@@ -24,6 +26,11 @@ internal sealed class ClutterClearing
     private Celestial? _body;
     private ClutterGrid[]? _grids;
     private bool[] _collideable = Array.Empty<bool>();
+    private TreeCover.Kind[] _kinds = Array.Empty<TreeCover.Kind>();
+    private double[] _ranges = Array.Empty<double>();
+    private TreeCover? _treeCover;
+    /// <summary>Counts the times the game's exclusions were reset, so TreeCover sorts everything again.</summary>
+    private int _generation;
     private object? _target;
     private int _excludedCells;
     private bool _selfTestDone;
@@ -31,16 +38,20 @@ internal sealed class ClutterClearing
     public int Excluded { get; private set; }
     public int Pending { get; private set; }
     public string Status { get; private set; } = "waiting for ground clutter";
+    public TreeCover? Trees => _treeCover;
+    /// <summary>Why tree cover stopped, if it failed.</summary>
+    public string? TreeCoverError { get; private set; }
 
-    public ClutterClearing(Settings settings)
+    public ClutterClearing(Settings settings, string modDir)
     {
         _settings = settings;
+        _modDir = modDir;
     }
 
     /// <summary>Main thread, once per frame, after placement.</summary>
     public void Update(Celestial body, Tile[] tiles, double3 cameraCcf, double budgetMs)
     {
-        if (!_settings.ClearClutter)
+        if (!_settings.ClearClutter && !_settings.RealisticTrees)
         {
             Status = "off";
             return;
@@ -62,6 +73,7 @@ internal sealed class ClutterClearing
         {
             _target = placement;
             Excluded = 0;
+            _generation++;
             foreach (var tile in tiles)
                 tile.ClutterApplied = 0;
         }
@@ -71,7 +83,7 @@ internal sealed class ClutterClearing
         int pending = 0;
         // Nearest first: grass only shows within ~80 m of the camera, and a city tile holds a lot of it.
         var ordered = tiles.OrderBy(t => double3.Dot(t.CenterCcf - cameraCcf, t.CenterCcf - cameraCcf));
-        foreach (var tile in ordered)
+        foreach (var tile in _settings.ClearClutter ? ordered : Enumerable.Empty<Tile>())
         {
             if (tile.State != TileState.Ready)
                 continue;
@@ -112,12 +124,72 @@ internal sealed class ClutterClearing
             if (tile.ClutterApplied < masks.Length)
                 pending++;
         }
+        if (_settings.RealisticTrees && TreeCoverError == null)
+        {
+            // A failure here turns tree cover off for the session (reported once) instead of stopping the whole update.
+            try
+            {
+                HandOverTreeCover(body, renderer, placement, cameraCcf, deadline);
+            }
+            catch (Exception e)
+            {
+                TreeCoverError = e.Message;
+                Log.Error($"tree cover turned off: {e}");
+            }
+        }
         _excludedCells = placement.Sum(p => p.ExcludedCells.Count);
         Pending = pending;
-        Status = pending > 0 ? $"clearing, {pending} tiles to go" : "up to date";
+        Status = !_settings.ClearClutter ? "roads and buildings off" : pending > 0 ? $"clearing, {pending} tiles to go" : "up to date";
 
         if (!_selfTestDone)
             SelfTest(body, renderer);
+    }
+
+    /// <summary>
+    /// Feeds TreeCover the camera and queues its masks into the game. Trees have colliders: cells near the
+    /// controlled vessel, which a physics bubble may have loaded, go through the physics path, the rest directly
+    /// (the game only makes colliders for instances still included when it loads a cell).
+    /// </summary>
+    private void HandOverTreeCover(Celestial body, GroundClutterRenderer renderer, GroundClutterPlacementData[] placement, double3 cameraCcf, long deadline)
+    {
+        _treeCover ??= new TreeCover(new WorldCover(_modDir, NetLoader.CreateGetRange(_modDir)));
+        _treeCover.Update(cameraCcf, body.MeanRadius, _grids!, _kinds, _ranges, _generation);
+        bool physicsListening = _clock.Elapsed.TotalSeconds - _lastPhysicsSync < 1;
+        double3? vessel = null;
+        if (physicsListening && Program.ControlledVehicle is { } controlled)
+        {
+            double3 v = Double3Ex.Transform(controlled.GetPositionCce(), body.GetCce2Ccf());
+            if (double3.Dot(v, v) < Math.Pow(body.MeanRadius + 50000, 2))
+                vessel = v;
+        }
+        while (Stopwatch.GetTimestamp() < deadline && _treeCover.TryDequeue(out var key, out uint[] mask))
+        {
+            var cell = new CubeCellGrid.Cell(key.X, key.Y, key.Face);
+            if (vessel is { } at && _collideable[key.Ecotype] && NearVessel(at, key, body.MeanRadius))
+            {
+                for (int bit = 0; bit < Clutter.Edge * Clutter.Edge; bit++)
+                {
+                    if ((mask[bit >> 5] & (1u << (bit & 31))) != 0)
+                        _viaPhysics.Enqueue(new BubbleClutterStatics.ClutterRemoval(
+                            new BubbleClutterStatics.ClutterInstanceKey(body.Hash, key.Ecotype, cell, (uint)bit), BubbleClutterStatics.ClutterExclusionType.Destroyed));
+                }
+                continue;
+            }
+            var data = placement[key.Ecotype].GetExclusionData(cell);
+            for (int i = 0; i < mask.Length; i++)
+                data[i] &= ~mask[i];
+            placement[key.Ecotype].ExcludeCell(cell, data);
+            renderer.QueueExclusionUpload(body.Hash, key.Ecotype, cell);
+        }
+    }
+
+    /// <summary>Whether a cell's centre is within 2 km of the vessel (cells are at most ~500 m across).</summary>
+    private bool NearVessel(double3 vesselCcf, ClutterCellKey key, double radius)
+    {
+        int res = _grids![key.Ecotype].Resolution;
+        double3 centre = Clutter.QscUvToDirection(key.Face, (key.X + 0.5) / res, (key.Y + 0.5) / res) * radius;
+        double3 d = vesselCcf - centre;
+        return double3.Dot(d, d) < 2000.0 * 2000.0;
     }
 
     /// <summary>Harmony postfix on PhysicsBubble.PopulatePendingExclusions, main thread, once per bubble and frame.</summary>
@@ -142,6 +214,8 @@ internal sealed class ClutterClearing
         }
         var grids = new ClutterGrid[ecotypes.Count];
         _collideable = new bool[ecotypes.Count];
+        _kinds = new TreeCover.Kind[ecotypes.Count];
+        _ranges = new double[ecotypes.Count];
         renderer.PlanetPhysicalData.TryGetValue(body.Hash, out var physical);
         for (int i = 0; i < ecotypes.Count; i++)
         {
@@ -152,10 +226,13 @@ internal sealed class ClutterClearing
                 Log.Error($"clutter grid {ecotypes[i].Name}: computed resolution {resolution}, game uses {game}");
                 resolution = game;
             }
-            // Trees get a few metres so their trunks stand clear of the kerb; grass only needs to stay off the asphalt.
-            double clearance = Math.Clamp(0.2 * separation, 0.3, _settings.TreeClearanceMeters);
+            // Trees get a few metres so their trunks stand clear of the kerb, shrubs (5 m apart) 2 m. Grass clumps
+            // (1.45 m apart) are wider than their spacing suggests and leaned over the asphalt with 0.3 m: 1 m.
+            double clearance = Math.Clamp(0.4 * separation, 1.0, _settings.TreeClearanceMeters);
             grids[i] = new ClutterGrid(i, resolution, clearance);
             _collideable[i] = ecotypes[i].Collideable;
+            _kinds[i] = TreeCover.KindOf(ecotypes[i].Name);
+            _ranges[i] = ecotypes[i].Placement.GenerationRange.InMeters();
             Log.Info($"clutter grid {ecotypes[i].Name}: separation {separation:0.##} m, resolution {resolution}, clearance {clearance:0.#} m");
         }
         _grids = grids;

@@ -30,6 +30,10 @@ VARIANTS = [
 
 TEX_W, TEX_H = 128, 64
 
+# Alpha of the diffuse and PBR textures of ground surfaces (roads, airfields): the game's static object shader is
+# patched to look up their shadows a little higher up (ShaderPatch.cs, same values).
+DIFFUSE_MARKER, PBR_MARKER = 0x2B, 0xB2
+
 
 def write_png(path, width, height, pixel):
     rows = bytearray()
@@ -75,88 +79,135 @@ def pbr_pixel(rough, metal):
     return pixel
 
 
-def road_line(y):
-    """Lane markings on the road top. Texture rows run across the road (v = width), so lines are rows
-    and stay sharp however long a road piece is stretched."""
-    edge = TEX_H * 0.09
-    return abs(y - edge) < 1.2 or abs(y - (TEX_H - 1 - edge)) < 1.2 or abs(y - (TEX_H - 1) / 2) < 0.6
+# Road surfaces from a scan (road, street, ramp, highway, junction pad): a square texture whose first SCAN_SPLIT
+# columns are the slab sides and the rest its top, SCAN_GAP pixels of margin kept off the edges (GEE_ScannedSlab and
+# GEE_RoadDisc map the same). AoRoughMetal at half size: roughness and AO need less detail than colour.
+SCAN_SIZE, SCAN_PBR_SIZE, SCAN_SPLIT, SCAN_GAP = 2048, 1024, 128, 4
+# The longest road piece (Placement.RoadPieceMeters): every dash period and the 2 m scan divide it, so the surface
+# runs on seamlessly from piece to piece.
+ROAD_PIECE, SCAN_METERS = 16.0, 2.0
+POLYHAVEN_DIR = os.path.join(os.path.dirname(__file__), "data", "polyhaven")
+SCAN_ASSET, SCAN_RESOLUTION = "asphalt_pit_lane", "8k"
+
+# Markings, metres from the right edge (v = 0, the slab's -B side; right-hand traffic): centre, width and either
+# None (solid) or (dash, period). Each profile is laid out for one width; narrower or wider roads stretch it.
+ROAD_PROFILES = {
+    # Primary, secondary, tertiary (Buildings.RoadVariant): edge lines and a dashed centre line.
+    "road": (8.0, [(0.35, 0.12, None), (7.65, 0.12, None), (4.0, 0.12, (3.0, 8.0))]),
+    # Minor, residential, service, track (Buildings.StreetVariant): no markings.
+    "street": (6.0, []),
+    # One-lane motorway and trunk links (Buildings.RampVariant): edge lines.
+    "ramp": (6.0, [(0.6, 0.15, None), (5.5, 0.15, None)]),
+    # One carriageway of a motorway or trunk (Buildings.HighwayVariant): 2.5 m hard shoulder, two 3.75 m lanes split
+    # by a dashed line (6 m dash, 10 m gap), solid edge lines and a 0.75 m strip on the left.
+    "highway": (11.0, [(2.5, 0.20, None), (10.25, 0.15, None), (6.25, 0.15, (6.0, 16.0))]),
+}
 
 
-def road_diffuse_pixel(rng):
-    def pixel(x, y):
-        if x >= TEX_W // 2 and road_line(y):
-            v = 215 + 15 * rng.random()
-            return bytes((clamp(v), clamp(v), clamp(v * 0.97), 255))
-        v = 52 + 10 * rng.random()
-        return bytes((clamp(v), clamp(v), clamp(v * 1.04), 255))
-    return pixel
+def scan_uv():
+    """u ranges of the top and the sides and v range of the top, as unit_box and road_disc take them."""
+    n, s, g = SCAN_SIZE, SCAN_SPLIT, SCAN_GAP
+    return dict(top=((s + g) / n, (n - g) / n), side=(g / n, (s - g) / n), across=(g / n, (n - g) / n))
 
 
-def road_pbr_pixel(x, y):
-    return bytes((255, 200 if x >= TEX_W // 2 and road_line(y) else 240, 0, 255))
+def polyhaven_maps(asset, resolution):
+    """Diffuse and ARM (AO, roughness, metal) scans of a Poly Haven texture (CC0), downloaded once into data/polyhaven."""
+    import urllib.request
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = None
+    os.makedirs(POLYHAVEN_DIR, exist_ok=True)
+    images = []
+    for kind in ("diff", "arm"):
+        name = f"{asset}_{kind}_{resolution}.jpg"
+        path = os.path.join(POLYHAVEN_DIR, name)
+        if not os.path.exists(path):
+            url = f"https://dl.polyhaven.org/file/ph-assets/Textures/jpg/{resolution}/{asset}/{name}"
+            request = urllib.request.Request(url, headers={"User-Agent": "GEE-mod make_assets.py"})
+            with urllib.request.urlopen(request) as response, open(path + ".part", "wb") as f:
+                f.write(response.read())
+            os.replace(path + ".part", path)
+        images.append(Image.open(path).convert("RGB"))
+    return images
 
 
-ROAD_SIZE = 256
+_scan_cache = []
 
 
-def _noise(rng, size, blur):
-    """Zero-mean, unit-ish noise with features about `blur` pixels wide."""
-    import numpy as np
-    from PIL import Image, ImageFilter
-    a = rng.random((size, size)).astype("float32")
-    im = Image.fromarray((a * 255).astype("uint8")).filter(ImageFilter.GaussianBlur(blur))
-    b = np.asarray(im, dtype="float32")
-    return (b - b.mean()) / (b.std() + 1e-6)
-
-
-def road_images():
-    """Asphalt: grain, patches, darker wheel tracks, worn off-white edge and centre lines and a dusty shoulder
-    that fades into the ground. Rows run across the road (the top face's v), columns along it (stretched per
-    road piece), so all detail that must stay sharp is a function of the row. The left half is for the low
-    side faces."""
+def scanned_images(width, length, lines, wrap=True):
+    """Road surface from the Poly Haven "Asphalt Pit Lane" scan (2 m square, 8k) at its real size: the top stands for
+    width metres across and length along (tiled; with wrap the scan repeats exactly length / 2 m times so pieces
+    join seamlessly). lines as in ROAD_PROFILES. Toned to a neutral grey asphalt."""
     import numpy as np
     from PIL import Image
-    rng = np.random.default_rng(7)
-    n = ROAD_SIZE
-    grain = _noise(rng, n, 0.7)
-    patches = _noise(rng, n, 9)
-    wear = _noise(rng, n, 5)
-    m = 0.03
-    ys = (np.arange(n)[:, None] / (n - 1) - m) / (1 - 2 * m)          # 0..1 across the top face
-    xs = np.broadcast_to(np.arange(n)[None, :], (n, n))
-    t = np.broadcast_to(np.clip(ys, 0, 1), (n, n))
-    top = xs >= n // 2
+    if not _scan_cache:
+        _scan_cache.extend(polyhaven_maps(SCAN_ASSET, SCAN_RESOLUTION))
+    diff, arm = _scan_cache
+    n, s, g = SCAN_SIZE, SCAN_SPLIT, SCAN_GAP
+    used_along, used_across = n - s - 2 * g, n - 2 * g
+    tiles_along = length / SCAN_METERS
+    tile_w = round(used_along / tiles_along)
+    if wrap:
+        assert tile_w * tiles_along == used_along
+    tile_h = round(used_across / (width / SCAN_METERS))
 
-    base = 74 + 5 * grain + 6 * patches
-    # Wheel tracks: darker, polished bands; the middle and the edges stay lighter and coarser.
-    for c in (0.30, 0.70):
-        track = np.exp(-((t - c) / 0.07) ** 2)
-        base = base - 9 * track - 3 * track * wear
-    # Dusty, gravelly shoulder fading out toward the road edge.
-    shoulder = np.clip((0.075 - np.minimum(t, 1 - t)) / 0.075, 0, 1) ** 1.5
-    rgb = np.stack([base * 1.0, base * 1.0, base * 1.05], axis=-1)
-    dust = np.array([110, 100, 84], dtype="float32") + 8 * grain[..., None]
-    rgb = rgb * (1 - 0.8 * shoulder[..., None]) + dust * (0.8 * shoulder[..., None])
+    def region(img):
+        a = np.asarray(img.resize((tile_w, tile_h), Image.LANCZOS), dtype="float32")
+        big = np.tile(a, (n // tile_h + 2, (n - s) // tile_w + 2, 1))
+        # The pattern starts at the first used column, so it wraps exactly from one piece to the next.
+        off = (-g) % tile_w
+        return big[:n, off:off + n - s].copy()
 
-    def line(centre, half):
-        return np.clip(1 - np.abs(t - centre) / half, 0, 1)
+    rgb, pbr = region(diff), region(arm)
+    # The scan is warm brown; real asphalt is a neutral dark grey with an albedo of about 0.1 (lighter read as
+    # concrete paths in game).
+    lum = rgb.mean(axis=-1, keepdims=True)
+    rgb = lum + 0.35 * (rgb - lum)
+    rgb *= 64 / rgb.mean()
+    rows = np.arange(n, dtype="float32")[:, None]
+    cols = np.arange(n - s, dtype="float32")[None, :]
+    across_m = np.clip((rows - g) / (used_across - 1), 0, 1) * width
+    along_m = (cols - g) / used_along * length
+    px_across, px_along = used_across / width, used_along / length
 
-    # Lines are worn: patchy, broken up along the road, never fully opaque.
-    worn = np.clip(0.85 + 0.45 * wear + 0.3 * patches, 0.15, 1.0)
-    edge = np.maximum(line(0.115, 0.016), line(0.885, 0.016)) * worn
-    centre = line(0.5, 0.012) * np.clip(worn * (0.8 + 0.5 * _noise(rng, n, 14)), 0, 1)
-    paint = np.maximum(edge, centre * 0.9)
-    white = np.array([206, 204, 194], dtype="float32") + 10 * grain[..., None]
-    rgb = rgb * (1 - 0.88 * paint[..., None]) + white * (0.88 * paint[..., None])
-    rgb = np.where(top[..., None], rgb, np.array([66, 66, 70], dtype="float32"))
+    paint = np.zeros((n, n - s), dtype="float32")
+    for centre, line_width, dash in lines:
+        cover = np.clip(line_width / 2 * px_across - np.abs(across_m - centre) * px_across + 0.5, 0, 1)
+        if dash:
+            d, period = dash
+            at = along_m % period
+            cover = cover * np.clip(np.minimum(at, d - at) * px_along + 0.5, 0, 1)
+        paint = np.maximum(paint, cover)
+    lum = rgb.mean(axis=-1)
+    worn = np.clip(0.92 + (lum - lum.mean()) / (lum.std() + 1e-6) * 0.06, 0.75, 1.0)
+    paint *= worn
+    white = np.array([214, 214, 206], dtype="float32")
+    rgb = rgb * (1 - paint[..., None]) + white * paint[..., None]
+    pbr[..., 1] = pbr[..., 1] * (1 - paint) + 170 * paint
+    pbr[..., 0] = pbr[..., 0] * (1 - paint) + 255 * paint
+    pbr[..., 2] = 0
 
-    rough = 238 - 14 * np.exp(-((t - 0.30) / 0.07) ** 2) - 14 * np.exp(-((t - 0.70) / 0.07) ** 2)
-    rough = rough - 36 * paint + 10 * shoulder
-    rough = np.where(top, rough, 240)
-    pbr = np.stack([np.full((n, n), 255.0), rough, np.zeros((n, n)), np.full((n, n), 255.0)], axis=-1)
-    diffuse = np.concatenate([rgb, np.full((n, n, 1), 255.0)], axis=-1)
+    rng = np.random.default_rng(11)
+    side = np.array([98, 90, 74], dtype="float32") + 6 * rng.standard_normal((n, s, 1)).astype("float32")
+    diffuse = np.concatenate([side, rgb], axis=1)
+    side_pbr = np.broadcast_to(np.array([255, 240, 0], dtype="float32"), (n, s, 3))
+    aorm = np.concatenate([side_pbr, pbr], axis=1)
+    diffuse = np.concatenate([diffuse, np.full((n, n, 1), float(DIFFUSE_MARKER))], axis=-1)
+    aorm = np.concatenate([aorm, np.full((n, n, 1), float(PBR_MARKER))], axis=-1)
     to_image = lambda a: Image.fromarray(np.clip(a, 0, 255).astype("uint8"), "RGBA")
-    return to_image(diffuse), to_image(pbr)
+    pbr_image = to_image(aorm).resize((SCAN_PBR_SIZE, SCAN_PBR_SIZE), Image.BOX)
+    # Keep the marker exact after filtering.
+    pbr_image.putalpha(PBR_MARKER)
+    return to_image(diffuse), pbr_image
+
+
+def road_profile_images(name):
+    width, lines = ROAD_PROFILES[name]
+    return scanned_images(width, ROAD_PIECE, lines)
+
+
+def junction_pad_images():
+    """The pad's top is mapped from above: about a 10 m pad, plain."""
+    return scanned_images(10.0, 10.0, [], wrap=False)
 
 
 # Gabled roofs (Buildings.FirstRoofVariant on in C#): name, tile rgb, gable wall rgb.
@@ -194,21 +245,21 @@ def airfield_diffuse_pixel(kind, rng):
         u = (x - TEX_W // 2) / (TEX_W // 2 - 1)
         if kind == "apron":
             g = 150 + 14 * rng.random()
-            return bytes((clamp(g), clamp(g), clamp(g * 0.96), 255))
+            return bytes((clamp(g), clamp(g), clamp(g * 0.96), DIFFUSE_MARKER))
         base = 46 if kind == "runway" else 56
         g = base + 10 * rng.random()
         if x >= TEX_W // 2:
             if kind == "runway" and (abs(v - 0.05) < 0.012 or abs(v - 0.95) < 0.012 or (abs(v - 0.5) < 0.01 and u < 0.6)):
                 w = 215 + 15 * rng.random()
-                return bytes((clamp(w), clamp(w), clamp(w * 0.97), 255))
+                return bytes((clamp(w), clamp(w), clamp(w * 0.97), DIFFUSE_MARKER))
             if kind == "taxiway" and (abs(v - 0.5) < 0.012 or abs(v - 0.06) < 0.01 or abs(v - 0.94) < 0.01):
-                return bytes((clamp(220 + 20 * rng.random()), clamp(170 + 15 * rng.random()), 40, 255))
-        return bytes((clamp(g), clamp(g), clamp(g * 1.04), 255))
+                return bytes((clamp(220 + 20 * rng.random()), clamp(170 + 15 * rng.random()), 40, DIFFUSE_MARKER))
+        return bytes((clamp(g), clamp(g), clamp(g * 1.04), DIFFUSE_MARKER))
     return pixel
 
 
 def airfield_pbr_pixel(x, y):
-    return bytes((255, 235, 0, 255))
+    return bytes((255, 235, 0, PBR_MARKER))
 
 
 def gable():
@@ -250,8 +301,9 @@ def gable():
     return positions, normals, uvs, indices
 
 
-def unit_box(up_normals=False):
-    """Box with x in [0, 1] (up) and y, z in [-0.5, 0.5]; no bottom face. Facade uses u in [0, 0.5], roof u in [0.5, 1].
+def unit_box(up_normals=False, top=(0.53, 0.97), side=(0.03, 0.47), across=(0.03, 0.97)):
+    """Box with x in [0, 1] (up) and y, z in [-0.5, 0.5]; no bottom face. Facade uses u in [0, 0.5], roof u in [0.5, 1]
+    (top, side: the u ranges; across: the top face's v range).
 
     With up_normals every face is shaded as if it faced up. Road slabs use that: their low sides would
     otherwise catch grazing sunlight at dawn and dusk and outline every road in bright orange."""
@@ -259,7 +311,7 @@ def unit_box(up_normals=False):
     faces = []
     # top (+x)
     faces.append(((1, 0, 0), [(1, y, z) for y, z in ((-.5, -.5), (.5, -.5), (.5, .5), (-.5, .5))],
-                  lambda p: (0.5 + m + (0.5 - 2 * m) * (p[1] + .5), m + (1 - 2 * m) * (p[2] + .5))))
+                  lambda p: (top[0] + (top[1] - top[0]) * (p[1] + .5), across[0] + (across[1] - across[0]) * (p[2] + .5))))
     # sides: normal axis, the horizontal axis used for u
     for axis, sign in ((1, 1), (1, -1), (2, 1), (2, -1)):
         other = 3 - axis
@@ -272,7 +324,7 @@ def unit_box(up_normals=False):
             p[other] = h
             quad.append(tuple(p))
         faces.append((tuple(n), quad,
-                      lambda p, o=other: (m + (0.5 - 2 * m) * (p[o] + .5), m + (1 - 2 * m) * (1 - p[0]))))
+                      lambda p, o=other: (side[0] + (side[1] - side[0]) * (p[o] + .5), m + (1 - 2 * m) * (1 - p[0]))))
 
     positions, normals, uvs, indices = [], [], [], []
     for n, quad, uv in faces:
@@ -290,6 +342,61 @@ def unit_box(up_normals=False):
                 tri = (tri[0], tri[2], tri[1])
             indices.extend(base + i for i in tri)
     return positions, normals, uvs, indices
+
+
+def road_disc(segments=32, top=(0.53, 0.97), side=(0.03, 0.47), across=(0.03, 0.97)):
+    """Round junction pad: a flat cylinder, x in [0, 1] up, radius 0.5 in y and z, no bottom face. All normals face
+    up (as on the road slabs). The top is mapped from above into the texture's top range, the rim into its side
+    range (as unit_box takes them)."""
+    import math
+    m = 0.03
+    positions, normals, uvs, indices = [], [], [], []
+    ring = [(0.5 * math.cos(2 * math.pi * k / segments), 0.5 * math.sin(2 * math.pi * k / segments)) for k in range(segments)]
+    top_uv = lambda y, z: (top[0] + (top[1] - top[0]) * (y + .5), across[0] + (across[1] - across[0]) * (z + .5))
+    centre = len(positions)
+    positions.append((1, 0, 0))
+    normals.append((1, 0, 0))
+    uvs.append(top_uv(0, 0))
+    for y, z in ring:
+        positions.append((1, y, z))
+        normals.append((1, 0, 0))
+        uvs.append(top_uv(y, z))
+    for k in range(segments):
+        a, b = centre + 1 + k, centre + 1 + (k + 1) % segments
+        # counter-clockwise seen from above (+x): (y, z) turns from k to k + 1 about +x
+        indices += [centre, a, b]
+    for k in range(segments):
+        (y0, z0), (y1, z1) = ring[k], ring[(k + 1) % segments]
+        base = len(positions)
+        for (y, z), x in (((y0, z0), 0), ((y1, z1), 0), ((y1, z1), 1), ((y0, z0), 1)):
+            positions.append((x, y, z))
+            normals.append((1, 0, 0))
+            uvs.append((side[0] + (side[1] - side[0]) * (k + (y == y1 and z == z1)) / segments, m + (1 - 2 * m) * (1 - x)))
+        # outward: counter-clockwise seen from outside
+        indices += [base, base + 1, base + 2, base, base + 2, base + 3]
+    return positions, normals, uvs, indices
+
+
+def write_flat_normal_bc5(path):
+    """Flat normal map (x = y = 0) as a 4x4 BC5 KTX2 with its mips, uncompressed. The game reads normal maps as BC5
+    only: a PNG or RGBA8 one came out as a non-flat placeholder that tilted every normal by tens of degrees (dark navy
+    roads, blue shade on the towers)."""
+    block = bytes((128, 128, 0, 0, 0, 0, 0, 0)) * 2           # BC4 red + BC4 green, every texel 128
+    # Data format descriptor of a BC5 UNORM texture, as libktx writes it (KHR_DF_MODEL_BC5, 4x4 blocks of 16 bytes).
+    dfd = bytes.fromhex("3c00000000000000020038008401010003030000100000000000000000003f00"
+                        "0000000000000000ffffffff40003f010000000000000000ffffffff")
+    levels = 3                                               # 4x4, 2x2, 1x1: one block each
+    index_end = 80 + 24 * levels
+    data_start = (index_end + len(dfd) + 15) // 16 * 16
+    out = b"\xabKTX 20\xbb\r\n\x1a\n"
+    out += struct.pack("<9I", 141, 1, 4, 4, 0, 0, 1, levels, 0)   # VK_FORMAT_BC5_UNORM_BLOCK, no supercompression
+    out += struct.pack("<4I", index_end, len(dfd), 0, 0) + struct.pack("<2Q", 0, 0)
+    for level in range(levels):                              # smallest mip first in the file
+        out += struct.pack("<3Q", data_start + 16 * (levels - 1 - level), 16, 16)
+    out += dfd
+    out += b"\0" * (data_start - len(out)) + block * levels
+    with open(path, "wb") as f:
+        f.write(out)
 
 
 def write_glb(path, meshes):
@@ -350,9 +457,10 @@ def main():
               [(box_mesh, unit_box()), (road_mesh, unit_box(up_normals=True)), (gable_mesh, gable()),
                (tank_mesh, structure_assets.tank_mesh()), ("GEE_TankDome", structure_assets.dome_mesh()),
                ("GEE_HTank", structure_assets.horizontal_tank()), ("GEE_Tent", structure_assets.tent()),
-               ("GEE_CrewArm", structure_assets.crew_arm())]
+               ("GEE_CrewArm", structure_assets.crew_arm()), ("GEE_RoadDisc", road_disc(**scan_uv())),
+               ("GEE_ScannedSlab", unit_box(up_normals=True, **scan_uv()))]
               + landmark_assets.meshes())
-    write_png(os.path.join(MOD_DIR, "Textures", "GEE_Normal.png"), 4, 4, lambda x, y: bytes((128, 128, 255, 255)))
+    write_flat_normal_bc5(os.path.join(MOD_DIR, "Textures", "GEE_Normal.ktx2"))
 
     xml = ['<?xml version="1.0" encoding="utf-8"?>',
            "<!-- Generated by src/tools/make_assets.py. -->",
@@ -363,7 +471,7 @@ def main():
     textures.append(("road", None, None))
     for i, (name, diffuse, pbr) in enumerate(textures):
         if name == "road":
-            xml += road_material(i, road_mesh)
+            xml += ktx_material(i, "road", road_profile_images("road"), "GEE_ScannedSlab")
         else:
             _, facade, roof, rough, metal = VARIANTS[i]
             xml += ktx_material(i, name, facade_assets.facade(name, facade, roof, rough, metal, i), box_mesh)
@@ -401,22 +509,18 @@ def main():
             '    </PartModel>',
             '  </StaticObject>']
     i += 1
+    # Round asphalt pads over road junctions (Buildings.JunctionVariant): plain asphalt, ground surface markers.
+    xml += ktx_material(i, "road junction", junction_pad_images(), "GEE_RoadDisc")
+    i += 1
+    # One-way motorway and trunk carriageways (Buildings.HighwayVariant), then streets and ramps (StreetVariant,
+    # RampVariant), all from the Poly Haven scan like the road (variant 8).
+    for profile in ("highway", "street", "ramp"):
+        xml += ktx_material(i, profile, road_profile_images(profile), "GEE_ScannedSlab")
+        i += 1
     xml.append("</Assets>")
     with open(os.path.join(MOD_DIR, "Assets.xml"), "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(xml) + "\n")
     print(f"wrote assets for {i} variants to {MOD_DIR}")
-
-
-def road_material(i, mesh):
-    """The road asset: mipmapped KTX2 textures, so the lane lines do not shimmer at a distance."""
-    diffuse, pbr = road_images()
-    landmark_assets.write_ktx2(os.path.join(MOD_DIR, "Textures", f"GEE_V{i}_Diffuse.ktx2"), diffuse)
-    landmark_assets.write_ktx2(os.path.join(MOD_DIR, "Textures", f"GEE_V{i}_PBR.ktx2"), pbr)
-    for stale in (f"GEE_V{i}_Diffuse.png", f"GEE_V{i}_PBR.png"):
-        path = os.path.join(MOD_DIR, "Textures", stale)
-        if os.path.exists(path):
-            os.remove(path)
-    return [line.replace("_Diffuse.png", "_Diffuse.ktx2").replace("_PBR.png", "_PBR.ktx2") for line in material_xml(i, "road", mesh)]
 
 
 def ktx_material(i, name, images, mesh):
@@ -433,7 +537,7 @@ def material_xml(i, name, mesh):
     return [f'  <!-- variant {i}: {name} -->',
             f'  <PbrMaterial Id="GEE_V{i}_Material">',
             f'    <Diffuse Path="Textures/GEE_V{i}_Diffuse.png" Category="Vessel" />',
-            '    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />',
+            '    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />',
             f'    <AoRoughMetal Path="Textures/GEE_V{i}_PBR.png" Category="Vessel" />',
             '  </PbrMaterial>',
             f'  <StaticObject Id="GEE_Box{i}">',
@@ -451,7 +555,7 @@ def material(i, name, diffuse, pbr, mesh):
     return [f'  <!-- variant {i}: {name} -->',
             f'  <PbrMaterial Id="GEE_V{i}_Material">',
             f'    <Diffuse Path="Textures/GEE_V{i}_Diffuse.png" Category="Vessel" />',
-            '    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />',
+            '    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />',
             f'    <AoRoughMetal Path="Textures/GEE_V{i}_PBR.png" Category="Vessel" />',
             '  </PbrMaterial>',
             f'  <StaticObject Id="GEE_Box{i}">',

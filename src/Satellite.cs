@@ -11,28 +11,31 @@ using RenderCore;
 namespace GEE;
 
 /// <summary>
-/// One satellite tile on the ground: a local tangent frame at the tile centre (ego axes), the tile's half extents,
-/// terrain heights at its corners and centre, and where its image lies in the texture array.
+/// One satellite tile on the ground: a local tangent frame at the tile centre (ego axes), the tile's bounds, a grid
+/// of terrain heights over it, and where its image lies in the texture array.
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
 public struct SatInstance
 {
-    /// <summary>xyz: tile centre on the ground (ego), w: texture layer.</summary>
+    /// <summary>xyz: tile centre at the lowest terrain height of the tile (ego), w: texture layer.</summary>
     public float4 Center;
-    /// <summary>Unit east, north and up at the centre (ego axes).</summary>
+    /// <summary>Unit east, north and up at the centre (ego axes); Up.w: height span of the grid (m).</summary>
     public float4 East;
     public float4 North;
     public float4 Up;
     /// <summary>Centre latitude and longitude, Mercator ordinate of the north and south edges (radians).</summary>
     public float4 Geo;
-    /// <summary>West and east longitude (radians), radius at the centre (planet radius plus terrain), lift.</summary>
+    /// <summary>West and east longitude (radians), radius of the lowest terrain (planet radius plus height), lift.</summary>
     public float4 Geo2;
-    /// <summary>Corner heights relative to the centre: north-west, north-east, south-west, south-east.</summary>
-    public float4 Heights;
     /// <summary>UV offset and scale within the layer (a parent's part while the tile itself loads).</summary>
     public float4 Uv;
     /// <summary>x opacity, y sunlight, z height (m) the tile is pulled in front of the ground, along the view ray.</summary>
     public float4 Params;
+    /// <summary>
+    /// 9 x 9 terrain heights (rows north to south on the vertex grid's Mercator rows, columns west to east), 10 bits
+    /// each as a fraction of the span above the lowest, three per word.
+    /// </summary>
+    public uint4 H0, H1, H2, H3, H4, H5, H6;
 }
 
 /// <summary>
@@ -67,7 +70,7 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
 
     protected override VertexInput MakeVertexInput()
     {
-        return new VertexInput(1, 9).AddBindingWithAttributes<SatInstance>(0, 0, VkVertexInputRate.Instance);
+        return new VertexInput(1, 15).AddBindingWithAttributes<SatInstance>(0, 0, VkVertexInputRate.Instance);
     }
 
     protected override void OnRebuildFrameResources()
@@ -84,15 +87,27 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
         layout(location = 3) in vec4 up;
         layout(location = 4) in vec4 geo;
         layout(location = 5) in vec4 geo2;
-        layout(location = 6) in vec4 heights;
-        layout(location = 7) in vec4 uvRect;
-        layout(location = 8) in vec4 params;
+        layout(location = 6) in vec4 uvRect;
+        layout(location = 7) in vec4 params;
+        layout(location = 8) in uvec4 h0;
+        layout(location = 9) in uvec4 h1;
+        layout(location = 10) in uvec4 h2;
+        layout(location = 11) in uvec4 h3;
+        layout(location = 12) in uvec4 h4;
+        layout(location = 13) in uvec4 h5;
+        layout(location = 14) in uvec4 h6;
 
         layout(location = 0) out vec3 outUv;
         layout(location = 1) flat out vec2 outLook;
 
-        const int GRID = 16;
+        const int GRID = 16, HGRID = 9;
         const vec2 corners[6] = vec2[](vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 0), vec2(1, 1), vec2(0, 1));
+
+        float gridHeight(uvec4 words[7], int col, int row)
+        {
+            int i = row * HGRID + col, w = i / 3;
+            return float((words[w >> 2][w & 3] >> uint(10 * (i % 3))) & 1023u) / 1023.0;
+        }
 
         void main()
         {
@@ -104,7 +119,12 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
             float lat0 = geo.x;
             float dLat = lat - lat0, dLon = lon - geo.y;
             float sLat = sin(0.5 * dLat), sLon = sin(0.5 * dLon);
-            float h = mix(mix(heights.x, heights.y, q.x), mix(heights.z, heights.w, q.x), q.y);
+            uvec4 words[7] = uvec4[](h0, h1, h2, h3, h4, h5, h6);
+            vec2 g = q * float(HGRID - 1);
+            ivec2 g0 = min(ivec2(g), ivec2(HGRID - 2));
+            vec2 f = g - vec2(g0);
+            float h = mix(mix(gridHeight(words, g0.x, g0.y), gridHeight(words, g0.x + 1, g0.y), f.x),
+                          mix(gridHeight(words, g0.x, g0.y + 1), gridHeight(words, g0.x + 1, g0.y + 1), f.x), f.y) * up.w;
             float r = geo2.z + h;
             // The point's direction in the centre's east/north/up frame, minus up, without cancellation.
             float cl = cos(lat);
@@ -114,7 +134,7 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
             local.z += h + geo2.w;
             vec3 p = center.xyz + east.xyz * local.x + north.xyz * local.y + up.xyz * local.z;
             // Pulled toward the camera along the view ray: the same place on screen, but params.z metres (vertically)
-            // in front of the game's coarse terrain triangles, which the few height samples per tile cannot follow,
+            // in front of the terrain between the height samples, of the game's coarse distant terrain triangles,
             // and of the trees, which the photo already shows. Grazing rays need a longer pull for the same height.
             float dist = length(p);
             float sinDepression = max(-dot(p / dist, up.xyz), 0.05);
@@ -156,7 +176,7 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
 /// </summary>
 internal static class SatelliteImagery
 {
-    private const int TileSize = 256, Layers = 512, MaxZoom = 14, MinZoom = 3, UploadsPerFrame = 8, WorkerCount = 4;
+    private const int TileSize = 256, Layers = 512, MaxZoom = 14, MinZoom = 3, UploadsPerFrame = 8, WorkerCount = 8;
     /// <summary>Seconds a newly loaded tile takes to fade in over the coarser image it replaces.</summary>
     private const double FadeInSeconds = 0.6;
     /// <summary>Trees and low buildings the drape covers once fully faded in.</summary>
@@ -179,14 +199,21 @@ internal static class SatelliteImagery
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     private static readonly ConcurrentDictionary<(int, int, int), byte[]> Decoded = new();
     private static readonly HashSet<(int, int, int)> Pending = new();
-    private static readonly Dictionary<(int, int, int), (float4 Corners, double Center)> HeightCache = new();
     private static readonly Dictionary<(int, int, int), double> Wanted = new();
+    /// <summary>Points per side of a tile's height grid, and the words the grid packs into (see SatInstance).</summary>
+    private const int HeightPoints = 9, HeightWords = 28;
+    private static readonly ConcurrentDictionary<(int, int, int), TileHeights> HeightCache = new();
+    /// <summary>Tiles whose heights are queued or being sampled, with the last frame they were wanted in.</summary>
+    private static readonly ConcurrentDictionary<(int, int, int), long> HeightPending = new();
+    private static readonly ConcurrentQueue<(int, int, int)> HeightQueue = new();
+    private static readonly List<((int, int, int) Key, double Dist)> HeightWanted = new();
+    private static Celestial? _body;
+    private static long _heightTicks, _heightTiles;
     private static readonly object Lock = new();
     private static readonly List<SatInstance> Instances = new();
     private static SatInstance[] _buffer = new SatInstance[256];
     private static long _frame;
     private static bool _inFlight;
-    private static int _heightSamplesLeft;
     private static Thread[]? _workers;
     private static readonly SemaphoreSlim Signal = new(0);
     private static Func<string, string, byte[]>? _get;
@@ -390,8 +417,10 @@ internal static class SatelliteImagery
         double3? sun = NightLights.SunDirCcf(body, settings);
         lock (Lock)
             Wanted.Clear();
-        // Terrain queries are slow: a few new tiles per frame get their heights, the rest borrow an ancestor's.
-        _heightSamplesLeft = 8;
+        HeightWanted.Clear();
+        _body = body;
+        if (HeightCache.Count > 50000)
+            HeightCache.Clear();
 
         void Visit(int z, int x, int y)
         {
@@ -438,8 +467,21 @@ internal static class SatelliteImagery
                     added++;
                 }
             }
-            if (added > 0)
-                Signal.Release(added);
+            // Heights the same way; queued tiles still wanted are marked, so workers skip the ones left behind.
+            int heights = 0;
+            foreach (var (key, _) in HeightWanted.OrderBy(w => w.Key.Item1).ThenBy(w => w.Dist))
+            {
+                // TryUpdate, so a key a worker has just finished is not put back without being queued.
+                if (HeightPending.TryGetValue(key, out long seen))
+                    HeightPending.TryUpdate(key, _frame, seen);
+                else if (heights < 64 && HeightPending.TryAdd(key, _frame))
+                {
+                    HeightQueue.Enqueue(key);
+                    heights++;
+                }
+            }
+            if (added + heights > 0)
+                Signal.Release(added + heights);
         }
 
         int count = Math.Min(Instances.Count, SatelliteTechnique.MaxTiles);
@@ -475,31 +517,48 @@ internal static class SatelliteImagery
                 if (z > MinZoom && !Layer.ContainsKey((z - 1, x >> 1, y >> 1)))
                     Wanted.TryAdd((z - 1, x >> 1, y >> 1), dist);
             }
+        bool ownHeights = HeightCache.TryGetValue(key, out TileHeights? own);
+        if (!ownHeights)
+            HeightWanted.Add((key, dist));
         if (layer < 0)
             return;
 
-        var heights = Heights(z, x, y, centerDir, body);
+        Span<uint> words = stackalloc uint[HeightWords];
+        float low, span, residual;
+        if (ownHeights)
+        {
+            own!.Words.CopyTo(words);
+            (low, span, residual) = (own.Low, own.Span, own.Residual);
+        }
+        else if (!AncestorHeights(z, x, y, words, out low, out span, out residual))
+            return;                                                    // nothing to stand on yet
         Placement.Axes(centerDir, out double3 east, out double3 north);
         // rel is the centre on the mean sphere minus the camera; the ground point adds the terrain height.
-        double3 egoCenter = Rotate(rel + centerDir * heights.Center, rx, ry, rz);
+        double3 egoCenter = Rotate(rel + centerDir * low, rx, ry, rz);
         double3 eE = Rotate(east, rx, ry, rz), eN = Rotate(north, rx, ry, rz), eU = Rotate(centerDir, rx, ry, rz);
         float light = sun is { } sd ? (float)Math.Clamp(0.1 + 1.15 * double3.Dot(centerDir, sd), 0.02, 1.0) : 1f;
         var (bs, bw, bn, be) = VectorTile.Bounds(z, x, y);
-        double Merc(double latDeg) => Math.Asinh(Math.Tan(latDeg * Math.PI / 180));
         double lat0 = (bs + bn) / 2 * Math.PI / 180, lon0 = (bw + be) / 2 * Math.PI / 180;
-        // Height the drape must clear: the terrain between the height samples (a small part of the tile's size),
-        // and once faded in, the trees and low buildings standing on the ground (the photo shows them already).
-        double pull = 3 + 0.004 * halfN + CanopyMeters * fade;
+        // Height the drape must clear: the terrain rising between the height samples (measured when sampled) plus
+        // the 10-bit rounding, the game's coarse distant terrain triangles (a small part of the tile's size), and
+        // once faded in, the trees and low buildings standing on the ground (the photo shows them already).
+        double pull = 3 + residual + span / 1023 + 0.004 * halfN + CanopyMeters * fade;
         var instance = new SatInstance
         {
             Center = new float4((float)egoCenter.X, (float)egoCenter.Y, (float)egoCenter.Z, layer),
             East = new float4((float)eE.X, (float)eE.Y, (float)eE.Z, 0),
             North = new float4((float)eN.X, (float)eN.Y, (float)eN.Z, 0),
-            Up = new float4((float)eU.X, (float)eU.Y, (float)eU.Z, 0),
+            Up = new float4((float)eU.X, (float)eU.Y, (float)eU.Z, span),
             Geo = new float4((float)lat0, (float)lon0, (float)Merc(bn), (float)Merc(bs)),
-            Geo2 = new float4((float)(bw * Math.PI / 180), (float)(be * Math.PI / 180), (float)(planetR + heights.Center), 3),
-            Heights = heights.Corners,
+            Geo2 = new float4((float)(bw * Math.PI / 180), (float)(be * Math.PI / 180), (float)(planetR + low), 3),
             Params = new float4(fade, light, (float)pull, 0),
+            H0 = new uint4(words[0], words[1], words[2], words[3]),
+            H1 = new uint4(words[4], words[5], words[6], words[7]),
+            H2 = new uint4(words[8], words[9], words[10], words[11]),
+            H3 = new uint4(words[12], words[13], words[14], words[15]),
+            H4 = new uint4(words[16], words[17], words[18], words[19]),
+            H5 = new uint4(words[20], words[21], words[22], words[23]),
+            H6 = new uint4(words[24], words[25], words[26], words[27]),
         };
 
         LayerUsed[layer] = _frame;
@@ -534,41 +593,106 @@ internal static class SatelliteImagery
         return new float4((x - (ax << levels)) * scale, (y - (ay << levels)) * scale, scale, scale);
     }
 
-    /// <summary>
-    /// Terrain heights of a tile: sampled (a few new tiles per frame, terrain queries are slow), else taken from the
-    /// nearest sampled ancestor's surface over the same area, so the tile neither sinks to sea level nor jumps.
-    /// </summary>
-    private static (float4 Corners, double Center) Heights(int z, int x, int y, double3 centerDir, Celestial body)
+    private static double Merc(double latDeg) => Math.Asinh(Math.Tan(latDeg * Math.PI / 180));
+
+    /// <summary>A tile's terrain: heights (m) on the grid, packed for the shader, and how far the ground rises above it.</summary>
+    private sealed class TileHeights
     {
-        var key = (z, x, y);
-        if (HeightCache.TryGetValue(key, out var heights))
-            return heights;
-        if (_heightSamplesLeft-- > 0)
-        {
-            var (s, w, n, e) = VectorTile.Bounds(z, x, y);
-            double hc = Math.Max(body.GetTerrainHeightFromDirCcf(centerDir), 0);
-            float H(double lat, double lon) => (float)(Math.Max(body.GetTerrainHeightFromDirCcf(Placement.DirCcf(lat, lon)), 0) - hc);
-            heights = (new float4(H(n, w), H(n, e), H(s, w), H(s, e)), hc);
-            if (HeightCache.Count > 100000)
-                HeightCache.Clear();
-            HeightCache[key] = heights;
-            return heights;
-        }
-        for (int pz = z - 1, px = x >> 1, py = y >> 1; pz >= MinZoom; pz--, px >>= 1, py >>= 1)
-        {
-            if (!HeightCache.TryGetValue((pz, px, py), out var parent))
-                continue;
-            float4 part = Part(z, x, y, pz, px, py);
-            float4 c = parent.Corners;
-            float At(float qx, float qy) => Lerp(Lerp(c.X, c.Y, qx), Lerp(c.Z, c.W, qx), qy);
-            float x0 = part.X, y0 = part.Y, x1 = part.X + part.Z, y1 = part.Y + part.W;
-            float mid = At((x0 + x1) / 2, (y0 + y1) / 2);
-            return (new float4(At(x0, y0) - mid, At(x1, y0) - mid, At(x0, y1) - mid, At(x1, y1) - mid), parent.Center + mid);
-        }
-        return (default, 0);
+        public readonly float[] Values = new float[HeightPoints * HeightPoints];
+        public readonly uint[] Words = new uint[HeightWords];
+        public float Low, Span, Residual;
     }
 
-    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
+    /// <summary>
+    /// Worker thread: terrain heights of a tile on a grid twice as fine as the one the shader gets (rows on the same
+    /// Mercator ordinates as the vertex rows); every other point goes to the shader, the ones between tell how far
+    /// the ground rises above the interpolated surface.
+    /// </summary>
+    private static TileHeights SampleHeights(Celestial body, int z, int x, int y)
+    {
+        const int Fine = 2 * (HeightPoints - 1) + 1;
+        var (s, w, n, e) = VectorTile.Bounds(z, x, y);
+        double mn = Merc(n), ms = Merc(s);
+        var fine = new float[Fine * Fine];
+        for (int j = 0; j < Fine; j++)
+        {
+            double lat = Math.Atan(Math.Sinh(mn + (ms - mn) * j / (Fine - 1))) * 180 / Math.PI;
+            for (int i = 0; i < Fine; i++)
+            {
+                double lon = w + (e - w) * i / (Fine - 1);
+                // Water: the drape lies on the sea surface, not on the seabed.
+                fine[j * Fine + i] = (float)Math.Max(body.GetTerrainHeightFromDirCcf(Placement.DirCcf(lat, lon)), 0);
+            }
+        }
+        var t = new TileHeights();
+        for (int j = 0; j < HeightPoints; j++)
+            for (int i = 0; i < HeightPoints; i++)
+                t.Values[j * HeightPoints + i] = fine[2 * j * Fine + 2 * i];
+        float residual = 0;
+        for (int j = 0; j < Fine; j++)
+            for (int i = 0; i < Fine; i++)
+            {
+                // Between grid points the shader's surface is the mean of the neighbouring grid points.
+                int j0 = j / 2, j1 = (j + 1) / 2, i0 = i / 2, i1 = (i + 1) / 2;
+                float surface = 0.25f * (t.Values[j0 * HeightPoints + i0] + t.Values[j0 * HeightPoints + i1]
+                                         + t.Values[j1 * HeightPoints + i0] + t.Values[j1 * HeightPoints + i1]);
+                residual = Math.Max(residual, fine[j * Fine + i] - surface);
+            }
+        // The finer sampling only catches part of what rises between the points.
+        t.Residual = 1.5f * residual;
+        Pack(t.Values, t.Words, out t.Low, out t.Span);
+        return t;
+    }
+
+    /// <summary>Heights as 10-bit fractions of the span above the lowest one, three per word (see SatInstance).</summary>
+    private static void Pack(ReadOnlySpan<float> values, Span<uint> words, out float low, out float span)
+    {
+        low = float.MaxValue;
+        float high = float.MinValue;
+        foreach (float v in values)
+        {
+            low = Math.Min(low, v);
+            high = Math.Max(high, v);
+        }
+        span = high - low;
+        float scale = span > 0 ? 1023 / span : 0;
+        words.Clear();
+        for (int i = 0; i < values.Length; i++)
+            words[i / 3] |= (uint)Math.Clamp((int)MathF.Round((values[i] - low) * scale), 0, 1023) << (10 * (i % 3));
+    }
+
+    /// <summary>
+    /// While a tile's own heights are being sampled: the nearest sampled ancestor's surface over the same area, so
+    /// the tile neither sinks to sea level nor jumps. False if no ancestor has heights either.
+    /// </summary>
+    private static bool AncestorHeights(int z, int x, int y, Span<uint> words, out float low, out float span, out float residual)
+    {
+        for (int pz = z - 1, px = x >> 1, py = y >> 1; pz >= MinZoom; pz--, px >>= 1, py >>= 1)
+        {
+            if (!HeightCache.TryGetValue((pz, px, py), out TileHeights? parent))
+                continue;
+            float4 part = Part(z, x, y, pz, px, py);
+            Span<float> values = stackalloc float[HeightPoints * HeightPoints];
+            const int Last = HeightPoints - 1;
+            for (int j = 0; j < HeightPoints; j++)
+                for (int i = 0; i < HeightPoints; i++)
+                {
+                    // Mercator rows split evenly into the children's, so the part maps linearly onto the grid.
+                    float gx = (part.X + part.Z * i / Last) * Last, gy = (part.Y + part.W * j / Last) * Last;
+                    int x0 = Math.Min((int)gx, Last - 1), y0 = Math.Min((int)gy, Last - 1);
+                    float fx = gx - x0, fy = gy - y0;
+                    float[] v = parent.Values;
+                    float top = v[y0 * HeightPoints + x0] + (v[y0 * HeightPoints + x0 + 1] - v[y0 * HeightPoints + x0]) * fx;
+                    float bottom = v[(y0 + 1) * HeightPoints + x0] + (v[(y0 + 1) * HeightPoints + x0 + 1] - v[(y0 + 1) * HeightPoints + x0]) * fx;
+                    values[j * HeightPoints + i] = top + (bottom - top) * fy;
+                }
+            Pack(values, words, out low, out span);
+            residual = parent.Residual;
+            return true;
+        }
+        low = span = residual = 0;
+        return false;
+    }
 
     // ---- workers: download, cache, decode ----
 
@@ -576,8 +700,14 @@ internal static class SatelliteImagery
     {
         while (true)
         {
-            Signal.Wait(2000);
-            while (WorkQueue.TryDequeue(out var key))
+            // Heights first: a tile is not drawn without them, and they need no network.
+            if (HeightJob())
+                continue;
+            if (!WorkQueue.TryDequeue(out var key))
+            {
+                Signal.Wait(2000);
+                continue;
+            }
             {
                 var (z, x, y) = key;
                 string path = Path.Combine(ModDir, "cache", "sat", z.ToString(), $"{x}_{y}.jpg");
@@ -607,6 +737,33 @@ internal static class SatelliteImagery
                 }
             }
         }
+    }
+
+    /// <summary>Samples the heights of one queued tile, unless the view left it behind. False if none is queued.</summary>
+    private static bool HeightJob()
+    {
+        if (!HeightQueue.TryDequeue(out var key))
+            return false;
+        try
+        {
+            if (!HeightPending.TryGetValue(key, out long wanted) || Interlocked.Read(ref _frame) - wanted > 60 || _body is not { } body)
+                return true;
+            long start = Stopwatch.GetTimestamp();
+            HeightCache[key] = SampleHeights(body, key.Item1, key.Item2, key.Item3);
+            long ticks = Interlocked.Add(ref _heightTicks, Stopwatch.GetTimestamp() - start);
+            long tiles = Interlocked.Increment(ref _heightTiles);
+            if (tiles % 200 == 0)
+                Log.Info($"satellite heights: {tiles} tiles sampled, {ticks * 1000.0 / Stopwatch.Frequency / tiles:F1} ms each");
+        }
+        catch (Exception e)
+        {
+            LastError = $"satellite heights {key}: {e.Message}";
+        }
+        finally
+        {
+            HeightPending.TryRemove(key, out _);
+        }
+        return true;
     }
 
     public static void RebuildFrameResources() => _technique?.RebuildFrameResources();

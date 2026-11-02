@@ -18,6 +18,9 @@ src/net/bin/
 *.pdb
 src/tools/__pycache__/
 
+# Source scans downloaded by make_assets.py (Poly Haven, CC0)
+src/tools/data/polyhaven/
+
 # Editors and OS
 .vs/
 .vscode/

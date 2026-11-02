@@ -16,5 +16,8 @@ internal static class Log
             DefaultCategory.Log.Info($"[GEE] {message}");
     }
 
+    /// <summary>Always written: rare events worth seeing without debug logging.</summary>
+    public static void Notice(string message) => DefaultCategory.Log.Info($"[GEE] {message}");
+
     public static void Error(string message) => DefaultCategory.Log.Error($"[GEE] {message}");
 }

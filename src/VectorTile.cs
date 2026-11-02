@@ -54,6 +54,8 @@ public static class VectorTile
         Landmarks.AddTo(result, z, x, y);
         Pipelines.AddTo(result, z, x, y);
         Structures.AddTo(result, z, x, y);
+        RoadMerges.Apply(result.Roads, options.PlanetRadius);
+        RoadJunctions.Find(result.Roads);
         return result;
     }
 
@@ -203,7 +205,7 @@ public static class VectorTile
             }
             else if (name == "transportation" && type == 2 && Roads.Classify(tags) is { } road)
             {
-                AddLines(road.Width, road.Rank, road.Bridge, road.Lit, Airfield.None);
+                AddLines(road.Width, road.Rank, road.Bridge, road.Lit, Airfield.None, road.Surface);
             }
             else if (name == "aeroway" && type == 2 && tags.GetValueOrDefault("class") is "runway" or "taxiway")
             {
@@ -226,7 +228,7 @@ public static class VectorTile
                 }
             }
 
-            void AddLines(double width, int rank, bool bridge, bool lit, Airfield airfield)
+            void AddLines(double width, int rank, bool bridge, bool lit, Airfield airfield, RoadSurface surface = RoadSurface.Road)
             {
                 foreach (var line in Lines(geometry))
                 {
@@ -248,6 +250,7 @@ public static class VectorTile
                             Lit = lit,
                             Rank = rank,
                             Airfield = airfield,
+                            Surface = surface,
                             StartAtTileEdge = startCut,
                             EndAtTileEdge = endCut,
                         });

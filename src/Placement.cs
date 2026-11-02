@@ -199,9 +199,10 @@ public static class Placement
         Action<RoadLight>? light = null)
     {
         var dirs = new List<double3>();
-        for (int i = 0; i < road.Points.Count; i++)
+        var points = RoundedPoints(road, radius);
+        for (int i = 0; i < points.Count; i++)
         {
-            double3 d = DirCcf(road.Points[i].Lat, road.Points[i].Lon);
+            double3 d = points[i];
             if (i > 0)
             {
                 double3 prev = dirs[^1];
@@ -265,7 +266,7 @@ public static class Placement
         {
             Airfield.Runway => Buildings.RunwayVariant,
             Airfield.Taxiway => Buildings.TaxiwayVariant,
-            _ => Buildings.RoadVariant,
+            _ => Buildings.SurfaceVariant(road.Surface),
         };
 
         void Emit(double3 position, (int, int, int) color, double intensity, float glow)
@@ -348,6 +349,85 @@ public static class Placement
                 Style = Buildings.StyleNone,
             });
         }
+
+        if (road.Pads != null)
+            foreach (var pad in road.Pads)
+                add(MakePad(DirCcf(road.Points[pad.Point].Lat, road.Points[pad.Point].Lon), pad, radius, terrain));
+    }
+
+    /// <summary>Longest stretch on each side of a corner that a bend is rounded off over.</summary>
+    private const double RoundMaxMeters = 7;
+    /// <summary>Gentler bends stay as they are.</summary>
+    private const double RoundMinDegrees = 6;
+
+    /// <summary>
+    /// The road's points as CCF directions, with each bend rounded off (a quadratic curve between points up to
+    /// RoundMaxMeters before and after the corner, never more than 45 % of either side). Junction points
+    /// (RawRoad.Fixed) and both ends stay where they are, so roads still meet and tile edges still match: the
+    /// last corner before a cut ends on the straight line to the cut point, which the neighbouring tile continues.
+    /// </summary>
+    private static List<double3> RoundedPoints(RawRoad road, double radius)
+    {
+        var p = road.Points.Select(q => DirCcf(q.Lat, q.Lon) * radius).ToList();
+        if (p.Count < 3)
+            return p.Select(double3.Normalize).ToList();
+        var result = new List<double3>(p.Count * 3) { p[0] };
+        double reach = Math.Clamp(road.Width, 4, RoundMaxMeters);
+        for (int i = 1; i + 1 < p.Count; i++)
+        {
+            double3 b = p[i], toA = p[i - 1] - b, toC = p[i + 1] - b;
+            double la = Length(toA), lc = Length(toC);
+            if (road.Fixed?[i] == true || la < 0.05 || lc < 0.05)
+            {
+                result.Add(b);
+                continue;
+            }
+            toA *= 1 / la;
+            toC *= 1 / lc;
+            double turn = Math.PI - Math.Acos(Math.Clamp(double3.Dot(toA, toC), -1, 1));
+            if (turn < RoundMinDegrees * Math.PI / 180)
+            {
+                result.Add(b);
+                continue;
+            }
+            double d = Math.Min(reach, 0.45 * Math.Min(la, lc));
+            double3 t1 = b + toA * d, t2 = b + toC * d;
+            int n = Math.Max(2, (int)Math.Ceiling(turn / (8 * Math.PI / 180)));
+            for (int s = 0; s <= n; s++)
+            {
+                double t = (double)s / n;
+                result.Add(t1 * ((1 - t) * (1 - t)) + b * (2 * (1 - t) * t) + t2 * (t * t));
+            }
+        }
+        result.Add(p[^1]);
+        return result.Select(double3.Normalize).ToList();
+    }
+
+    /// <summary>
+    /// A junction pad (RoadJunctions): the round slab mesh, tilted with the terrain under its rim and sheared so
+    /// its sides stay vertical, its top pad.Lift above the terrain at its centre.
+    /// </summary>
+    public static BuildingInstance MakePad(double3 dir, JunctionPad pad, double radius, Func<double3, double> terrain)
+    {
+        Axes(dir, out double3 east, out double3 north);
+        double3 ground = dir * radius;
+        double Height(double3 offset) => Math.Max(terrain(double3.Normalize(ground + offset)), 0);
+        double h = Math.Max(terrain(dir), 0);
+        double r = pad.Radius;
+        double slopeEast = Height(east * r) - Height(-east * r), slopeNorth = Height(north * r) - Height(-north * r);
+        double3 center = dir * (radius + h);
+        return new BuildingInstance
+        {
+            Up = dir * (RoadDepth + pad.Lift),
+            AxisA = east * (2 * r) + dir * slopeEast,
+            AxisB = north * (2 * r) + dir * slopeNorth,
+            Base = center - dir * RoadDepth,
+            Center = center,
+            Variant = Buildings.JunctionVariant,
+            IsRoad = true,
+            Layer = Layers.Street,
+            Style = Buildings.StyleNone,
+        };
     }
 
     /// <summary>

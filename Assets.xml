@@ -5,7 +5,7 @@
   <!-- variant 0: concrete -->
   <PbrMaterial Id="GEE_V0_Material">
     <Diffuse Path="Textures/GEE_V0_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V0_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box0">
@@ -17,7 +17,7 @@
   <!-- variant 1: plaster -->
   <PbrMaterial Id="GEE_V1_Material">
     <Diffuse Path="Textures/GEE_V1_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V1_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box1">
@@ -29,7 +29,7 @@
   <!-- variant 2: sand -->
   <PbrMaterial Id="GEE_V2_Material">
     <Diffuse Path="Textures/GEE_V2_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V2_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box2">
@@ -41,7 +41,7 @@
   <!-- variant 3: brick -->
   <PbrMaterial Id="GEE_V3_Material">
     <Diffuse Path="Textures/GEE_V3_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V3_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box3">
@@ -53,7 +53,7 @@
   <!-- variant 4: dark -->
   <PbrMaterial Id="GEE_V4_Material">
     <Diffuse Path="Textures/GEE_V4_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V4_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box4">
@@ -65,7 +65,7 @@
   <!-- variant 5: glass -->
   <PbrMaterial Id="GEE_V5_Material">
     <Diffuse Path="Textures/GEE_V5_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V5_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box5">
@@ -77,7 +77,7 @@
   <!-- variant 6: metal -->
   <PbrMaterial Id="GEE_V6_Material">
     <Diffuse Path="Textures/GEE_V6_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V6_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box6">
@@ -89,7 +89,7 @@
   <!-- variant 7: ochre -->
   <PbrMaterial Id="GEE_V7_Material">
     <Diffuse Path="Textures/GEE_V7_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V7_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box7">
@@ -101,19 +101,19 @@
   <!-- variant 8: road -->
   <PbrMaterial Id="GEE_V8_Material">
     <Diffuse Path="Textures/GEE_V8_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V8_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box8">
     <PartModel Id="GEE_Box8_Model">
-      <Mesh Id="GEE_RoadSlab" />
+      <Mesh Id="GEE_ScannedSlab" />
       <Material Id="GEE_V8_Material" />
     </PartModel>
   </StaticObject>
   <!-- variant 9: landmark Vehicle Assembly Building -->
   <PbrMaterial Id="GEE_Vab_Material">
     <Diffuse Path="Textures/GEE_Vab_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_Vab_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box9">
@@ -125,7 +125,7 @@
   <!-- variant 10: landmark LC-39A Fixed Service Structure -->
   <PbrMaterial Id="GEE_Fss_Material">
     <Diffuse Path="Textures/GEE_Fss_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_Fss_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box10">
@@ -137,7 +137,7 @@
   <!-- variant 11: landmark LC-39A Integration Tower -->
   <PbrMaterial Id="GEE_IntegrationTower_Material">
     <Diffuse Path="Textures/GEE_IntegrationTower_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_IntegrationTower_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box11">
@@ -149,7 +149,7 @@
   <!-- variant 12: landmark LC-39A water tower -->
   <PbrMaterial Id="GEE_WaterTower_Material">
     <Diffuse Path="Textures/GEE_WaterTower_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_WaterTower_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box12">
@@ -161,7 +161,7 @@
   <!-- variant 13: landmark LC-39B lightning tower -->
   <PbrMaterial Id="GEE_LightningTower_Material">
     <Diffuse Path="Textures/GEE_LightningTower_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_LightningTower_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box13">
@@ -173,7 +173,7 @@
   <!-- variant 14: landmark Starbase launch tower 1 -->
   <PbrMaterial Id="GEE_StarbaseTower_Material">
     <Diffuse Path="Textures/GEE_StarbaseTower_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_StarbaseTower_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box14">
@@ -185,7 +185,7 @@
   <!-- variant 15: landmark ELA-4 lightning mast -->
   <PbrMaterial Id="GEE_LatticeMast_Material">
     <Diffuse Path="Textures/GEE_LatticeMast_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_LatticeMast_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box15">
@@ -197,7 +197,7 @@
   <!-- variant 16: landmark ELA-4 mobile gantry -->
   <PbrMaterial Id="GEE_ArianeGantry_Material">
     <Diffuse Path="Textures/GEE_ArianeGantry_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_ArianeGantry_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box16">
@@ -209,7 +209,7 @@
   <!-- variant 17: landmark ELA-4 water tower -->
   <PbrMaterial Id="GEE_ConcreteWaterTower_Material">
     <Diffuse Path="Textures/GEE_ConcreteWaterTower_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_ConcreteWaterTower_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box17">
@@ -221,7 +221,7 @@
   <!-- variant 18: landmark LC-1A lightning mast -->
   <PbrMaterial Id="GEE_PoleMast_Material">
     <Diffuse Path="Textures/GEE_PoleMast_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_PoleMast_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box18">
@@ -233,7 +233,7 @@
   <!-- variant 19: landmark SpaceX Horizontal Integration Facility -->
   <PbrMaterial Id="GEE_Hif_Material">
     <Diffuse Path="Textures/GEE_Hif_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_Hif_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box19">
@@ -245,7 +245,7 @@
   <!-- variant 20: roof tile red -->
   <PbrMaterial Id="GEE_V20_Material">
     <Diffuse Path="Textures/GEE_V20_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V20_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box20">
@@ -257,7 +257,7 @@
   <!-- variant 21: roof slate -->
   <PbrMaterial Id="GEE_V21_Material">
     <Diffuse Path="Textures/GEE_V21_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V21_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box21">
@@ -269,7 +269,7 @@
   <!-- variant 22: roof brown -->
   <PbrMaterial Id="GEE_V22_Material">
     <Diffuse Path="Textures/GEE_V22_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V22_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box22">
@@ -281,7 +281,7 @@
   <!-- variant 23: runway -->
   <PbrMaterial Id="GEE_V23_Material">
     <Diffuse Path="Textures/GEE_V23_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V23_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box23">
@@ -293,7 +293,7 @@
   <!-- variant 24: taxiway -->
   <PbrMaterial Id="GEE_V24_Material">
     <Diffuse Path="Textures/GEE_V24_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V24_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box24">
@@ -305,7 +305,7 @@
   <!-- variant 25: apron -->
   <PbrMaterial Id="GEE_V25_Material">
     <Diffuse Path="Textures/GEE_V25_Diffuse.png" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V25_PBR.png" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box25">
@@ -317,7 +317,7 @@
   <!-- variant 26: tank -->
   <PbrMaterial Id="GEE_V26_Material">
     <Diffuse Path="Textures/GEE_V26_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V26_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box26">
@@ -329,7 +329,7 @@
   <!-- variant 27: tank dome -->
   <PbrMaterial Id="GEE_V27_Material">
     <Diffuse Path="Textures/GEE_V27_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V27_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box27">
@@ -341,7 +341,7 @@
   <!-- variant 28: horizontal tank -->
   <PbrMaterial Id="GEE_V28_Material">
     <Diffuse Path="Textures/GEE_V28_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V28_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box28">
@@ -353,7 +353,7 @@
   <!-- variant 29: tent -->
   <PbrMaterial Id="GEE_V29_Material">
     <Diffuse Path="Textures/GEE_V29_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V29_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box29">
@@ -365,7 +365,7 @@
   <!-- variant 30: roof metal -->
   <PbrMaterial Id="GEE_V30_Material">
     <Diffuse Path="Textures/GEE_V30_Diffuse.ktx2" Category="Vessel" />
-    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
     <AoRoughMetal Path="Textures/GEE_V30_PBR.ktx2" Category="Vessel" />
   </PbrMaterial>
   <StaticObject Id="GEE_Box30">
@@ -379,6 +379,54 @@
     <PartModel Id="GEE_Box31_Model">
       <Mesh Id="GEE_CrewArm" />
       <Material Id="GEE_Fss_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- variant 32: road junction -->
+  <PbrMaterial Id="GEE_V32_Material">
+    <Diffuse Path="Textures/GEE_V32_Diffuse.ktx2" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
+    <AoRoughMetal Path="Textures/GEE_V32_PBR.ktx2" Category="Vessel" />
+  </PbrMaterial>
+  <StaticObject Id="GEE_Box32">
+    <PartModel Id="GEE_Box32_Model">
+      <Mesh Id="GEE_RoadDisc" />
+      <Material Id="GEE_V32_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- variant 33: highway -->
+  <PbrMaterial Id="GEE_V33_Material">
+    <Diffuse Path="Textures/GEE_V33_Diffuse.ktx2" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
+    <AoRoughMetal Path="Textures/GEE_V33_PBR.ktx2" Category="Vessel" />
+  </PbrMaterial>
+  <StaticObject Id="GEE_Box33">
+    <PartModel Id="GEE_Box33_Model">
+      <Mesh Id="GEE_ScannedSlab" />
+      <Material Id="GEE_V33_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- variant 34: street -->
+  <PbrMaterial Id="GEE_V34_Material">
+    <Diffuse Path="Textures/GEE_V34_Diffuse.ktx2" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
+    <AoRoughMetal Path="Textures/GEE_V34_PBR.ktx2" Category="Vessel" />
+  </PbrMaterial>
+  <StaticObject Id="GEE_Box34">
+    <PartModel Id="GEE_Box34_Model">
+      <Mesh Id="GEE_ScannedSlab" />
+      <Material Id="GEE_V34_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- variant 35: ramp -->
+  <PbrMaterial Id="GEE_V35_Material">
+    <Diffuse Path="Textures/GEE_V35_Diffuse.ktx2" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
+    <AoRoughMetal Path="Textures/GEE_V35_PBR.ktx2" Category="Vessel" />
+  </PbrMaterial>
+  <StaticObject Id="GEE_Box35">
+    <PartModel Id="GEE_Box35_Model">
+      <Mesh Id="GEE_ScannedSlab" />
+      <Material Id="GEE_V35_Material" />
     </PartModel>
   </StaticObject>
 </Assets>

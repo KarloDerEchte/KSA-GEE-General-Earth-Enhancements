@@ -20,6 +20,8 @@ down from altitude.
 - **Far field**: simplified buildings out to tens of kilometres, so cities stay visible after launch.
 - **Night**: lit windows, street lights in towns, and city lights visible from orbit.
 - **Satellite imagery** (Sentinel-2 cloudless, 2016) draped over the ground when seen from altitude.
+- **Trees where real forests are**: the game's trees, shrubs and grass are kept only where ESA WorldCover land cover
+  says they grow, with a few lone trees in open land; none on water, fields, rock or snow.
 - **Launch complexes** at all of the game's pads on Earth, placed from OpenStreetMap data:
   - **LC-39A** (Kennedy): the fixed service structure (from NASA's "Gantry" model) with a crew access arm that docks
     and undocks, the Starship integration tower, water and lightning towers, hangar, tank farm with boil-off vapour,
@@ -127,7 +129,10 @@ models from others keep their own licenses; `NOTICE.md` has the details.
 - Map data © OpenStreetMap contributors (ODbL), © OpenMapTiles; tiles by [OpenFreeMap](https://openfreemap.org).
 - Satellite imagery: EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus
   Sentinel data 2016), CC BY 4.0.
+- Land cover: © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA
+  WorldCover consortium, CC BY 4.0.
 - LC-39 fixed service structure: NASA 3D Resources "Gantry" (NASA / Michael D. Carbajal). Not endorsed by NASA.
+- Road asphalt: "Asphalt Pit Lane" by Dimitrios Savva, [Poly Haven](https://polyhaven.com/a/asphalt_pit_lane), CC0.
 
 This is a fan-made mod. It is not affiliated with or endorsed by the game's developers, NASA, SpaceX, or any data
 provider.

@@ -20,7 +20,22 @@ public sealed class RawRoad
     public int Rank;
     /// <summary>Runways and taxiways have their own surface and edge lights.</summary>
     public Airfield Airfield;
+    /// <summary>Points where other roads meet this one (RoadJunctions): bends there are not rounded off.</summary>
+    public bool[]? Fixed;
+    /// <summary>Round pads this road lays over junctions at its points (RoadJunctions); one road per junction.</summary>
+    public List<JunctionPad>? Pads;
+    /// <summary>Which surface and markings the road gets (Buildings.SurfaceVariant).</summary>
+    public RoadSurface Surface;
 }
+
+/// <summary>
+/// Road surfaces, each a scan-based material with its own markings (make_assets.py ROAD_PROFILES): main roads with
+/// edge and centre lines, unmarked streets, one-lane ramps with edge lines, and highway carriageways.
+/// </summary>
+public enum RoadSurface { Road, Street, Ramp, Highway }
+
+/// <summary>A round asphalt pad over the junction at a road's point: radius in metres, surface lift above the terrain.</summary>
+public readonly record struct JunctionPad(int Point, double Radius, double Lift);
 
 public enum Airfield { None, Runway, Taxiway }
 
@@ -33,7 +48,7 @@ public static class Roads
     public const double TieStep = 0.008;
     public const int TieLevels = 5;
 
-    public static (double Width, int Rank, bool Bridge, bool Lit)? Classify(Dictionary<string, object?> tags)
+    public static (double Width, int Rank, bool Bridge, bool Lit, RoadSurface Surface)? Classify(Dictionary<string, object?> tags)
     {
         string? cls = tags.GetValueOrDefault("class") as string;
         string? subclass = tags.GetValueOrDefault("subclass") as string;
@@ -61,9 +76,21 @@ public static class Roads
         // Dual carriageways are mapped as two one-way lines a few metres apart; full width would merge them.
         bool oneway = tags.GetValueOrDefault("oneway") is double o && o != 0;
         bool ramp = tags.GetValueOrDefault("ramp") is double r && r != 0;
-        if (oneway || ramp)
+        // One carriageway of a motorway: two 3.75 m lanes, a 2.5 m hard shoulder and a strip on the left; of a trunk
+        // road two 3.5 m lanes and narrower edges. Both get the highway surface, laid out for 11 m.
+        bool highway = oneway && !ramp && cls is "motorway" or "trunk";
+        if (highway)
+            width = cls == "motorway" ? 11.0 : 9.0;
+        else if (oneway || ramp)
             width = Math.Max(width * 0.6, 3.0);
-        return (width, rank, brunnel == "bridge", cls is not ("service" or "track"));
+        // Ramps lie under the carriageway they merge into (RoadMerges slides their ends under its edge).
+        if (ramp && cls is "motorway" or "trunk")
+            rank--;
+        var surface = highway ? RoadSurface.Highway
+            : ramp && cls is "motorway" or "trunk" ? RoadSurface.Ramp
+            : rank <= 1 ? RoadSurface.Street
+            : RoadSurface.Road;
+        return (width, rank, brunnel == "bridge", cls is not ("service" or "track"), surface);
     }
 
     /// <summary>Lift for a road of the given class; tie picks one of TieLevels sub-levels.</summary>

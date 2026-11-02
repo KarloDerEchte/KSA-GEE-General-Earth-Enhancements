@@ -748,7 +748,7 @@ def write(mod_dir, first_variant, write_png):
         lines += [f'  <!-- variant {i}: landmark {name} -->',
                   f'  <PbrMaterial Id="GEE_{key}_Material">',
                   f'    <Diffuse Path="Textures/GEE_{key}_Diffuse.png" Category="Vessel" />',
-                  '    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />',
+                  '    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />',
                   f'    <AoRoughMetal Path="Textures/GEE_{key}_PBR.png" Category="Vessel" />',
                   '  </PbrMaterial>',
                   f'  <StaticObject Id="GEE_Box{i}">',

@@ -310,6 +310,15 @@ public class GeeMod
                 _settings.ClearClutter = clearClutter;
                 Changed();
             }
+            bool realisticTrees = _settings.RealisticTrees;
+            if (ImGui.Checkbox("Trees only where real forests are (ESA WorldCover)", ref realisticTrees))
+            {
+                _settings.RealisticTrees = realisticTrees;
+                Changed();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Removes the game's trees from water, fields, rock and snow. Turning it off brings them back after loading the game again.\n"
+                    + "Land cover: © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium (CC BY 4.0)");
             bool lights = _settings.NightLights;
             if (ImGui.Checkbox("Night lights", ref lights))
             {
@@ -431,6 +440,10 @@ public class GeeMod
             ImGui.Text($"Satellite: {SatelliteImagery.LastTiles} tiles drawn, {SatelliteImagery.LoadedLayers} loaded");
         if (_settings.ClearClutter)
             ImGui.Text($"Clutter removed: {manager.Clutter.Excluded:N0} ({manager.Clutter.Status})");
+        if (_settings.RealisticTrees && manager.Clutter.TreeCoverError is { } treeError)
+            ImGui.TextColored(new float4(1, 0.5f, 0.3f, 1), $"Tree cover off: {treeError}");
+        else if (_settings.RealisticTrees && manager.Clutter.Trees is { } trees)
+            ImGui.Text($"Tree cover: {trees.Removed:N0} removed in {trees.Cells:N0} cells ({trees.Status})");
         if (_settings.LaunchPadClearRadiusKm > 0)
             ImGui.TextDisabled($"No buildings within {_settings.LaunchPadClearRadiusKm:0.#} km of {manager.LaunchPadCount} launch pads");
         if (_settings.NightLights)

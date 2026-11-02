@@ -11,6 +11,8 @@ internal static class Patches
 
     public static void Apply(Harmony harmony)
     {
+        // First, so the game's shaders are still to be compiled.
+        ShaderPatch.Apply(harmony);
         harmony.Patch(
             AccessTools.Method(typeof(Celestial), nameof(Celestial.UpdateRenderData), new[] { typeof(IViewport), typeof(int) }),
             postfix: new HarmonyMethod(typeof(Patches), nameof(AfterCelestialRenderData)));

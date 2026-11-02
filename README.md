@@ -32,7 +32,9 @@ down from altitude.
 ## Install
 
 1. Install Kitten Space Agency and the StarMap mod loader.
-2. Download the release zip and extract it so that you have
+2. Download the zip of the latest release from the
+   [Releases page](https://github.com/KarloDerEchte/KSA-GEE-General-Earth-Enhancements/releases) and extract it
+   so that you have
    `Documents/My Games/Kitten Space Agency/mods/GEE/` with `mod.toml`, `GEE.dll`, `Assets.xml`,
    `Meshes/` and `Textures/` in it.
 3. Start the game through StarMap. The mod window is in the mods menu.

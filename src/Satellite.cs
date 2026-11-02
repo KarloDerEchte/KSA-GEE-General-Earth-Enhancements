@@ -8,7 +8,7 @@ using Brutal.VulkanApi.Abstractions;
 using KSA;
 using RenderCore;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// One satellite tile on the ground: a local tangent frame at the tile centre (ego axes), the tile's half extents,
@@ -42,7 +42,7 @@ public struct SatInstance
 /// the sampled terrain heights; textured from the tile's layer of a texture array.
 /// Blended over the planet (premultiplied alpha), depth tested, no depth writes.
 /// </summary>
-internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatInstance>("OsmBuildingsSatellite", VertexShader, FragmentShader,
+internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatInstance>("GEESatellite", VertexShader, FragmentShader,
     MaxTiles, Grid * Grid * 6, array, Program.LinearClampedSampler)
 {
     public const int MaxTiles = 1024, Grid = 16;
@@ -162,7 +162,7 @@ internal static class SatelliteImagery
     /// <summary>Trees and low buildings the drape covers once fully faded in.</summary>
     private const double CanopyMeters = 45;
     private const string Url = "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{0}/{2}/{1}.jpg";
-    private const string UserAgent = "KSA-OsmBuildings/0.2 (Kitten Space Agency mod; satellite imagery)";
+    private const string UserAgent = "KSA-GEE/0.2 (Kitten Space Agency mod; satellite imagery)";
 
     public static Settings? Settings;
     public static string ModDir = "";
@@ -305,7 +305,7 @@ internal static class SatelliteImagery
         if (_texture != null)
             return;
         var renderer = Program.GetRenderer();
-        _texture = new SimpleVkTexture("OsmBuildings satellite imagery", renderer.Allocator, TileSize, TileSize, 1, VkFormat.R8G8B8A8UNorm, 1, Layers);
+        _texture = new SimpleVkTexture("GEE satellite imagery", renderer.Allocator, TileSize, TileSize, 1, VkFormat.R8G8B8A8UNorm, 1, Layers);
         _staging = renderer.Allocator.CreateStagingPool(renderer.Graphics, 1);
         // Every layer readable from the start (layers not loaded yet are never sampled, but must be in a valid layout).
         CommandBuffer cb = _staging.NextCommandBuffer();
@@ -328,7 +328,7 @@ internal static class SatelliteImagery
         _workers = new Thread[WorkerCount];
         for (int i = 0; i < _workers.Length; i++)
         {
-            _workers[i] = new Thread(WorkerLoop) { IsBackground = true, Name = $"OsmBuildings satellite {i}" };
+            _workers[i] = new Thread(WorkerLoop) { IsBackground = true, Name = $"GEE satellite {i}" };
             _workers[i].Start();
         }
     }

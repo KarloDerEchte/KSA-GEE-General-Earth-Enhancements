@@ -1,7 +1,7 @@
 using Brutal.Numerics;
 using KSA;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// Development aid: plays a script from autoshot.txt in the mod folder (once; it is renamed to autoshot.done
@@ -22,6 +22,7 @@ internal static class AutoShot
     private static string[]? _lines;
     private static int _next;
     private static Step _step = Step.Next;
+    private static string? _view;
     private static double _timer;
     private static double _target;
     private static string _shotName = "";
@@ -47,6 +48,9 @@ internal static class AutoShot
         }
         try
         {
+            // A view is held every frame until the next camera command: set once, the free camera drifts away.
+            if (_view != null)
+                View(_view, bodyId);
             Run(dt, modDir, bodyId, sunId);
         }
         catch (Exception e)
@@ -136,6 +140,7 @@ internal static class AutoShot
                         CrewArm.Finish();
                     break;
                 case "view":
+                    _view = argument;
                     View(argument, bodyId);
                     break;
                 case "log":
@@ -143,6 +148,8 @@ internal static class AutoShot
                     break;
                 default:
                     Log.Info($"autoshot: > {line}");
+                    if (line.StartsWith("camera", StringComparison.Ordinal) || line.StartsWith("load", StringComparison.Ordinal))
+                        _view = null;
                     Program.TerminalInterface.Execute(line);
                     break;
             }

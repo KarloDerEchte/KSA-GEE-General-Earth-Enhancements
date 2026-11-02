@@ -1,6 +1,6 @@
 using Brutal.Numerics;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// One building box in planet-fixed (CCF) coordinates: the unit box mesh (x up in [0, 1], y and z in

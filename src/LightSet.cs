@@ -1,6 +1,6 @@
 using Brutal.Numerics;
 
-namespace OsmBuildings;
+namespace GEE;
 
 public enum LightKind { Building, Lamp, Regional }
 

@@ -1,6 +1,6 @@
 // Data (c) OpenStreetMap contributors, available under the Open Database License 1.0
 // (https://opendatacommons.org/licenses/odbl/1-0/). Generated from OpenStreetMap; see NOTICE.md.
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>Overground pipelines around Launch Complex 39A (OSM, ODbL): polylines of latitude, longitude pairs; generated.</summary>
 internal static class PipelineData

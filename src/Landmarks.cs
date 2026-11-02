@@ -1,4 +1,4 @@
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>A well-known building drawn with its own model and facade texture (tools/landmark_assets.py).</summary>
 /// <param name="AngleDeg">Direction of the model's AxisA, counter-clockwise from east (as Box2.Angle).</param>
@@ -28,18 +28,41 @@ public static class Landmarks
         new("LC-39A water tower", 28.6093588, -80.6030832, 0, 20, 20, 80.5, 0, 0),
         // Pad 39B: the lightning tower from the tiles (147 m, 22 x 24 m footprint).
         new("LC-39B lightning tower", 28.6275564, -80.6195819, 0, 22, 24.1, 147, 0, 0),
+        // Starbase: launch tower 1 (OSM way 968227813, 143 m), 32 m west of the game's pad "Starbase OLM A"; the catch
+        // arms (+B) point at the pad. Tower 2 is a copy.
+        new("Starbase launch tower 1", 25.9961259, -97.1547359, -86.4, 13, 13, 143, 0, 0),
+        // Ariane 6 pad ELA-4 (Kourou): the four lightning masts (OSM nodes) around the launch table, centred on the
+        // game's pad (the table is 30 m from the game's coordinate), about 115 m tall after the CNES/ESA photo; the
+        // mobile gantry (OSM way 514549015, 90 m) in its parked position north of the table, bay toward the pad; and
+        // the concrete water tower (OSM way 666132848).
+        new("ELA-4 lightning mast", 5.2645052, -52.7916748, 19.7, 4.5, 4.5, 115, 0, 0),
+        new("ELA-4 mobile gantry", 5.2659869, -52.7924831, 200.7, 44.1, 68.1, 90, 0, 0),
+        new("ELA-4 water tower", 5.2661577, -52.7907852, 0, 15, 15, 68, 0, 0),
+        // Rocket Lab Launch Complex 1 (Mahia): the slim white lightning masts beside pads A and B (OSM nodes).
+        new("LC-1A lightning mast", -39.2614679, 177.8654784, 0, 2, 2, 22, 0, 0),
         new("SpaceX Horizontal Integration Facility", 28.6040886, -80.604168, 89.98, 94.53, 47.81, 26, 0, 0),
     };
 
     /// <summary>
-    /// More of the same landmark models elsewhere: index into All for the model and size, and the place: pad 39B's
-    /// water tower (the tiles draw it as stacked pieces) and its other two lightning towers.
+    /// More of the same landmark models elsewhere: index into All for the model, the place, and a size (0 keeps the
+    /// model's): pad 39B's water tower (the tiles draw it as stacked pieces) and its other two lightning towers,
+    /// Starbase's second launch tower, the other ELA-4 lightning masts, the other masts at Mahia, and the launch tower
+    /// at Vandenberg SLC-4E (OSM way 568768533, 70 m; moved from 11 m to 24 m off the game's pad so it stands clear
+    /// of the pad deck).
     /// </summary>
-    public static readonly (int Model, double Lat, double Lon, double AngleDeg)[] Copies =
+    public static readonly (int Model, double Lat, double Lon, double AngleDeg, double LengthA, double LengthB, double Height)[] Copies =
     {
-        (3, 28.6282300, -80.6198250, 0),
-        (4, 28.6261461, -80.6219153, 0),
-        (4, 28.6278169, -80.6223349, 0),
+        (3, 28.6282300, -80.6198250, 0, 0, 0, 0),
+        (4, 28.6261461, -80.6219153, 0, 0, 0, 0),
+        (4, 28.6278169, -80.6223349, 0, 0, 0, 0),
+        (5, 25.9970432, -97.1580678, -86.4, 12, 12, 144.5),
+        (6, 5.2652067, -52.7919276, 19.7, 0, 0, 0),
+        (6, 5.2649189, -52.7927314, 19.7, 0, 0, 0),
+        (6, 5.2642085, -52.7924786, 19.7, 0, 0, 0),
+        (9, -39.2615398, 177.8647582, 0, 0, 0, 0),
+        (9, -39.2611981, 177.8657223, 0, 0, 0, 0),
+        (9, -39.2606945, 177.8652461, 0, 0, 0, 0),
+        (6, 34.6322603, -120.6105760, 0, 8, 8, 70),
     };
 
     /// <summary>The landmark models and their copies, as landmarks.</summary>
@@ -47,8 +70,15 @@ public static class Landmarks
     {
         for (int i = 0; i < All.Length; i++)
             yield return (i, All[i]);
-        foreach (var (model, lat, lon, angle) in Copies)
-            yield return (model, All[model] with { Lat = lat, Lon = lon, AngleDeg = angle });
+        foreach (var (model, lat, lon, angle, a, b, h) in Copies)
+        {
+            Landmark l = All[model];
+            yield return (model, l with
+            {
+                Lat = lat, Lon = lon, AngleDeg = angle,
+                LengthA = a > 0 ? a : l.LengthA, LengthB = b > 0 ? b : l.LengthB, Height = h > 0 ? h : l.Height,
+            });
+        }
     }
 
     /// <summary>
@@ -175,7 +205,7 @@ public static class Landmarks
     public static bool IsTower(long buildingId)
     {
         int index = (int)(-1 - buildingId);
-        return buildingId < 0 && index < All.Length && All[index].Height >= 60 && All[index].Name.Contains("LC-39");
+        return buildingId < 0 && index < All.Length && All[index].Height >= 60 && index != 0;   // not the VAB
     }
 
     /// <summary>Adds the landmarks whose centre lies in the tile, so each is placed exactly once.</summary>
@@ -195,6 +225,7 @@ public static class Landmarks
                 Lon = l.Lon,
                 Height = l.Height,
                 Variant = Buildings.FirstLandmarkVariant + model,
+                Style = Buildings.StyleNone,
                 Boxes = { new Box2(0, 0, l.AngleDeg * Math.PI / 180, l.LengthA, l.LengthB) },
             });
         }

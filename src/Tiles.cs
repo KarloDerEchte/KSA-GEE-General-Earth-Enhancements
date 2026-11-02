@@ -4,7 +4,7 @@ using System.Text.Json;
 using Brutal.Numerics;
 using KSA;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>A zoom 14 web mercator tile (about 2.4 km at the equator, 1.6 km at 48°).</summary>
 public readonly record struct TileKey(int X, int Y)
@@ -109,7 +109,7 @@ public sealed class Tile(TileKey key)
 /// </summary>
 public sealed class TileManager : IDisposable
 {
-    private const string UserAgent = "KSA-OsmBuildings/0.2 (Kitten Space Agency mod)";
+    private const string UserAgent = "KSA-GEE/0.2 (Kitten Space Agency mod)";
 
     private readonly Settings _settings;
     private readonly string _modDir;
@@ -156,7 +156,7 @@ public sealed class TileManager : IDisposable
         ClutterClearing.Active = _clutter;
         for (int i = 0; i < Math.Clamp(settings.DownloadThreads, 1, 8); i++)
         {
-            var worker = new Thread(WorkerLoop) { IsBackground = true, Name = $"OsmBuildings tiles {i}" };
+            var worker = new Thread(WorkerLoop) { IsBackground = true, Name = $"GEE tiles {i}" };
             _workers.Add(worker);
             worker.Start();
         }

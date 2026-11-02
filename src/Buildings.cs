@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>One OSM building (or building part), reduced to boxes in meters east/north of (Lat, Lon).</summary>
 public sealed class RawBuilding

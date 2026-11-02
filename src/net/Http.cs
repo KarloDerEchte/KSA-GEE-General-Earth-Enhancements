@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace OsmBuildings.Net;
+namespace GEE.Net;
 
 /// <summary>Blocking HTTP for the tile worker threads. Loaded by reflection, see NetLoader.</summary>
 public static class Http

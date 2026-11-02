@@ -229,7 +229,7 @@ def crawler_crane(m, a0, b0, boom, angle_deg):
     box(m, (tip[0] - 62.0, tip[1] - 0.8, b0 - 0.8), (tip[0] - 60.0, tip[1] + 0.8, b0 + 0.8), red)   # hook block
 
 
-def integration_tower(width, depth, height):
+def integration_tower(width, depth, height, olm=True, crane=True):
     """Starship integration tower after the photos of the tower at LC-39A and Starbase: four chords, dense ring
     beams every 3.6 m, X bracing every 7.2 m on all faces, platforms every 21.6 m, a clad base, two catch arms
     (trusses with a strut) near the top and a lower service arm toward the pad (+B), a machine house and a mast."""
@@ -268,12 +268,14 @@ def integration_tower(width, depth, height):
     truss_arm(m, 0.60 * total, 0.0, 3.2, hd, 17.0, 3.2, STEEL, sloped=True)
     # Orbital launch mount: a dark table on six legs between the tower and the pad, with the launch deck on top.
     b0 = hd + 30.0
-    for a in (-8.0, 0.0, 8.0):
-        for b in (b0 - 8.0, b0 + 8.0):
-            box(m, (0, a - 1.2, b - 1.2), (GROUND_M + 7.0, a + 1.2, b + 1.2), CLAD)
-    box(m, (GROUND_M + 7.0, -11.0, b0 - 11.0), (GROUND_M + 10.0, 11.0, b0 + 11.0), CLAD)
-    box(m, (GROUND_M + 10.0, -6.5, b0 - 6.5), (GROUND_M + 11.2, 6.5, b0 + 6.5), STEEL)
-    crawler_crane(m, -hw - 38.0, 0.0, 150.0, 81.0)   # boom tip about 15 m clear of the tower, above its top
+    if olm:
+        for a in (-8.0, 0.0, 8.0):
+            for b in (b0 - 8.0, b0 + 8.0):
+                box(m, (0, a - 1.2, b - 1.2), (GROUND_M + 7.0, a + 1.2, b + 1.2), CLAD)
+        box(m, (GROUND_M + 7.0, -11.0, b0 - 11.0), (GROUND_M + 10.0, 11.0, b0 + 11.0), CLAD)
+        box(m, (GROUND_M + 10.0, -6.5, b0 - 6.5), (GROUND_M + 11.2, 6.5, b0 + 6.5), STEEL)
+    if crane:
+        crawler_crane(m, -hw - 38.0, 0.0, 150.0, 81.0)   # boom tip about 15 m clear of the tower, above its top
     # Machine house, hoist beam and mast.
     box(m, (top, -hw + 0.3, -hd + 0.3), (top + 5.0, hw - 0.3, hd - 0.3), CLAD)
     beam(m, (top + 5.0, 0, 0), (total, 0, 0), 0.5, WHITE)
@@ -346,12 +348,136 @@ def lightning_tower(width, depth, height):
     return m, total
 
 
+def starbase_tower(width, depth, height):
+    """Starship launch tower at Starbase (OSM "Starbase Integration Tower 1/2", 143-145 m): the integration tower
+    without its own launch mount and crane, since the rocket stands on the game's pad; the catch arms face it (+B)."""
+    return integration_tower(width, depth, height, olm=False, crane=False)
+
+
+def lattice_mast(width, depth, height):
+    """Lightning protection mast after the photos of the Ariane 6 pad (ELA-4): a square galvanised lattice, slightly
+    tapering, rings and X bracing every 6 m, rest platforms, and a slim air terminal on top."""
+    total = height + GROUND_M
+    m = Mesh()
+    pole = min(12.0, total * 0.12)
+    top = total - pole
+    r0 = min(width, depth) * 0.46
+    r1 = max(r0 * 0.45, 0.9)
+
+    def corner(k, h):
+        r = r0 + (r1 - r0) * h / top
+        sa, sb = ((-1, -1), (1, -1), (1, 1), (-1, 1))[k]
+        return (h, sa * r, sb * r)
+
+    for k in range(4):
+        beam(m, corner(k, 0), corner(k, top), 0.45, STEEL)
+    levels = max(int(top / 6.0), 2)
+    for i in range(levels + 1):
+        h = top * i / levels
+        for k in range(4):
+            beam(m, corner(k, h), corner((k + 1) % 4, h), 0.18, STEEL)
+        if i < levels:
+            h1 = top * (i + 1) / levels
+            for k in range(4):
+                beam(m, corner(k, h), corner((k + 1) % 4, h1), 0.14, STEEL)
+                beam(m, corner((k + 1) % 4, h), corner(k, h1), 0.14, STEEL)
+    for i in range(4, levels, 5):
+        h = top * i / levels
+        r = abs(corner(0, h)[1])
+        box(m, (h - 0.1, -r, -r), (h + 0.1, r, r), STEEL)
+    box(m, (top - 0.3, -r1 - 0.3, -r1 - 0.3), (top + 0.3, r1 + 0.3, r1 + 0.3), STEEL)
+    beam(m, (top + 0.3, 0, 0), (total, 0, 0), 0.35, STEEL)
+    return m, total
+
+
+def pole_mast(width, depth, height):
+    """Slim white lightning mast on a small base (Rocket Lab Launch Complex 1): a tapering tube."""
+    total = height + GROUND_M
+    m = Mesh()
+    r = min(width, depth) * 0.5
+    box(m, (0, -r, -r), (GROUND_M + 0.6, r, r), CLAD)
+    revolve(m, [(GROUND_M + 0.6, r * 0.32), (total - 3.0, r * 0.12), (total, 0.05)], WHITE, 12)
+    return m, total
+
+
+def ariane_gantry(width, depth, height):
+    """Ariane 6 mobile gantry (ELA-4, OSM "Portique Mobile", 90 m), after the CNES/ESA photo of the launch complex:
+    white clad, a wide lower block and a narrower upper tower with a roof cap, and the full-height vehicle bay facing
+    the pad (+B), open so the dark steel access platforms inside show; louvres under the roof and floor seams."""
+    total = height + GROUND_M
+    m = Mesh()
+    hw, hd = width / 2, depth / 2
+    split = GROUND_M + 0.55 * height              # top of the lower block
+    roof = total - 1.5
+    uw, ud = hw * 0.74, hd * 0.80                 # upper tower half sizes
+    uoff = hd - ud                                # the upper tower is flush with the pad side
+    bay_low, bay_up = 0.27 * width, 0.13 * width  # half width of the vehicle bay, lower and upper
+    bay_depth = 0.55 * depth
+    front = hd
+    # Lower block: two side wings and the back, around the bay.
+    box(m, (0, -hw, -hd), (split, -bay_low, hd), WHITE)
+    box(m, (0, bay_low, -hd), (split, hw, hd), WHITE)
+    box(m, (0, -bay_low, -hd), (split, bay_low, front - bay_depth), WHITE)
+    # Upper tower, also open at the front.
+    box(m, (split, -uw, uoff - ud), (roof, -bay_up, front), WHITE)
+    box(m, (split, bay_up, uoff - ud), (roof, uw, front), WHITE)
+    box(m, (split, -bay_up, uoff - ud), (roof, bay_up, front - bay_depth), WHITE)
+    # Bay ceiling below the roof cap, and the cap itself overhanging a little.
+    box(m, (roof - 6.0, -bay_up, front - bay_depth), (roof, bay_up, front), WHITE)
+    box(m, (roof, -uw - 0.6, uoff - ud - 0.6), (total, uw + 0.6, front + 0.6), CLAD)
+    # Roof of the lower block around the tower.
+    box(m, (split - 0.4, -hw - 0.3, -hd - 0.3), (split + 0.4, hw + 0.3, hd + 0.3), CLAD)
+    # Inside the bay: dark platforms every 7 m and the steel frame at the back and sides.
+    for h in range(int(GROUND_M + 9), int(roof - 6), 7):
+        half = bay_low if h < split else bay_up
+        box(m, (h - 0.3, -half + 0.2, front - bay_depth + 0.2), (h + 0.3, half - 0.2, front - bay_depth * 0.45), DARK)
+    for side in (-1, 1):
+        for b in (front - bay_depth + 0.6, front - bay_depth * 0.5):
+            beam(m, (GROUND_M, side * (bay_up - 0.6), b), (roof - 6.0, side * (bay_up - 0.6), b), 0.8, STEEL)
+            beam(m, (GROUND_M, side * (bay_low - 0.6), b), (split, side * (bay_low - 0.6), b), 0.8, STEEL)
+    box(m, (GROUND_M, -bay_up, front - bay_depth + 0.05), (roof - 6.0, bay_up, front - bay_depth + 0.25), DARK)
+    box(m, (GROUND_M, -bay_low, front - bay_depth + 0.05), (split, bay_low, front - bay_depth + 0.25), DARK)
+    # Floor seams on all outer walls and a louvre band under the roof cap on the long sides.
+    for h in [GROUND_M + 12.0 * k for k in range(1, 8)]:
+        if h >= roof - 2:
+            break
+        a, b = (hw, hd) if h < split else (uw, ud)
+        o = 0.0 if h < split else uoff
+        box(m, (h - 0.2, -a - 0.08, o - b - 0.08), (h + 0.2, a + 0.08, o + b + 0.08), CLAD)
+    for side in (-1, 1):
+        box(m, (roof - 5.0, side * (uw + 0.05) - 0.05, uoff - ud * 0.7), (roof - 2.5, side * (uw + 0.05) + 0.05, uoff + ud * 0.7), DARK)
+    # Wheel bogies on the rails at the four corners.
+    for sa in (-1, 1):
+        for sb in (-1, 1):
+            box(m, (GROUND_M - 0.5, sa * hw * 0.85 - 2.0, sb * hd * 0.85 - 4.0), (GROUND_M + 2.5, sa * hw * 0.85 + 2.0, sb * hd * 0.85 + 4.0), DARK)
+    return m, total
+
+
+def concrete_water_tower(width, depth, height):
+    """Water tower of the Ariane 6 pad: a plain concrete cylinder with a slightly wider tank head and a roof rim."""
+    total = height + GROUND_M
+    m = Mesh()
+    r = min(width, depth) * 0.5
+    head = total - 9.0
+    revolve(m, [(0, r * 0.86), (head, r * 0.86), (head + 1.0, r), (total - 0.6, r), (total - 0.6, r * 0.98), (total, r * 0.3)], WHITE, 32)
+    box(m, (head - 0.4, -r * 0.88, -0.4), (head + 0.2, r * 0.88, 0.4), CLAD)
+    return m, total
+
+
+GANTRY_PALETTE = [((150, 154, 160), 150, 25), ((206, 208, 210), 165, 5), ((236, 236, 232), 170, 0), ((36, 40, 48), 140, 10)]
+CONCRETE_PALETTE = [((176, 178, 178), 200, 0), ((168, 168, 164), 210, 0), ((198, 196, 190), 215, 0), ((120, 120, 118), 210, 0)]
+
 # key, name, A, B, height (Landmarks.cs), palette, builder
 TOWERS = [
     ("Fss", "LC-39A Fixed Service Structure", 22.02, 13.27, 100.0, FSS_PALETTE, fixed_service_structure),
     ("IntegrationTower", "LC-39A Integration Tower", 11.33, 11.31, 144.5, TOWER_PALETTE, integration_tower),
     ("WaterTower", "LC-39A water tower", 20.0, 20.0, 80.5, WATER_PALETTE, water_tower),
     ("LightningTower", "LC-39B lightning tower", 22.0, 24.1, 147.0, TOWER_PALETTE, lightning_tower),
+    ("StarbaseTower", "Starbase launch tower 1", 13.0, 13.0, 143.0, TOWER_PALETTE, starbase_tower),
+    ("LatticeMast", "ELA-4 lightning mast", 4.5, 4.5, 115.0, TOWER_PALETTE, lattice_mast),
+    ("ArianeGantry", "ELA-4 mobile gantry", 44.1, 68.1, 90.0, GANTRY_PALETTE, ariane_gantry),
+    ("ConcreteWaterTower", "ELA-4 water tower", 15.0, 15.0, 68.0, CONCRETE_PALETTE, concrete_water_tower),
+    ("PoleMast", "LC-1A lightning mast", 2.0, 2.0, 24.0, WATER_PALETTE, pole_mast),
 ]
 
 
@@ -602,7 +728,7 @@ def _fix_winding(mesh):
 
 
 def meshes():
-    return [(f"OsmBuildings_{key}", tower_mesh(builder, a, b, h)) for key, _, a, b, h, _, builder in TOWERS]
+    return [(f"GEE_{key}", tower_mesh(builder, a, b, h)) for key, _, a, b, h, _, builder in TOWERS]
 
 
 def tank_mesh():
@@ -615,20 +741,20 @@ def write(mod_dir, first_variant, write_png):
     for k, (key, name, a, b, h, palette, _) in enumerate(TOWERS):
         i = first_variant + k
         tex = os.path.join(mod_dir, "Textures")
-        write_png(os.path.join(tex, f"OsmBuildings_{key}_Diffuse.png"), 16, 4,
+        write_png(os.path.join(tex, f"GEE_{key}_Diffuse.png"), 16, 4,
                   lambda x, y, palette=palette: bytes((*palette[x // 4][0], 255)))
-        write_png(os.path.join(tex, f"OsmBuildings_{key}_PBR.png"), 16, 4,
+        write_png(os.path.join(tex, f"GEE_{key}_PBR.png"), 16, 4,
                   lambda x, y, palette=palette: bytes((255, palette[x // 4][1], palette[x // 4][2], 255)))
         lines += [f'  <!-- variant {i}: landmark {name} -->',
-                  f'  <PbrMaterial Id="OsmBuildings_{key}_Material">',
-                  f'    <Diffuse Path="Textures/OsmBuildings_{key}_Diffuse.png" Category="Vessel" />',
-                  '    <Normal Path="Textures/OsmBuildings_Normal.png" Category="Vessel" />',
-                  f'    <AoRoughMetal Path="Textures/OsmBuildings_{key}_PBR.png" Category="Vessel" />',
+                  f'  <PbrMaterial Id="GEE_{key}_Material">',
+                  f'    <Diffuse Path="Textures/GEE_{key}_Diffuse.png" Category="Vessel" />',
+                  '    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />',
+                  f'    <AoRoughMetal Path="Textures/GEE_{key}_PBR.png" Category="Vessel" />',
                   '  </PbrMaterial>',
-                  f'  <StaticObject Id="OsmBuildings_Box{i}">',
-                  f'    <PartModel Id="OsmBuildings_Box{i}_Model">',
-                  f'      <Mesh Id="OsmBuildings_{key}" />',
-                  f'      <Material Id="OsmBuildings_{key}_Material" />',
+                  f'  <StaticObject Id="GEE_Box{i}">',
+                  f'    <PartModel Id="GEE_Box{i}_Model">',
+                  f'      <Mesh Id="GEE_{key}" />',
+                  f'      <Material Id="GEE_{key}_Material" />',
                   '    </PartModel>',
                   '  </StaticObject>']
     return lines

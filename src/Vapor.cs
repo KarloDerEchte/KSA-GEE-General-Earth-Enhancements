@@ -7,7 +7,7 @@ using Brutal.VulkanApi.Abstractions;
 using KSA;
 using RenderCore;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>One vapour puff: camera-relative position (ego axes) and radius; opacity, lightness, seed, age.</summary>
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
@@ -22,7 +22,7 @@ public struct VaporInstance
 /// cryogenic tanks of a launch complex. Each puff is a round falloff broken up by animated value noise; drawn in
 /// the main pass after the planet with the depth test on and no depth writes, like the glow sprites.
 /// </summary>
-internal sealed class VaporTechnique() : InstancedPass<VaporInstance>("OsmBuildingsVapor", VertexShader, FragmentShader, MaxPuffs, 4)
+internal sealed class VaporTechnique() : InstancedPass<VaporInstance>("GEEVapor", VertexShader, FragmentShader, MaxPuffs, 4)
 {
     public const int MaxPuffs = 20_000;
 

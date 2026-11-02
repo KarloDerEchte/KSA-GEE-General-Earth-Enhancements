@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Brutal.Numerics;
 using KSA;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// The crew access arm of the LC-39A fixed service structure as a moving part: it turns about a vertical hinge at

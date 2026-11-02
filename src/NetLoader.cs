@@ -1,10 +1,10 @@
 using System.Reflection;
 using System.Runtime.Loader;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
-/// HTTP lives in OsmBuildings.Net.dll, loaded on first use: this assembly must not reference System.Net
+/// HTTP lives in GEE.Net.dll, loaded on first use: this assembly must not reference System.Net
 /// types, because StarMap scans it while loading mods (same constraint as RocketSpawnApi).
 /// </summary>
 internal static class NetLoader
@@ -14,8 +14,8 @@ internal static class NetLoader
     {
         var self = typeof(NetLoader).Assembly;
         var alc = AssemblyLoadContext.GetLoadContext(self) ?? AssemblyLoadContext.Default;
-        var net = alc.LoadFromAssemblyPath(Path.Combine(modDir, "OsmBuildings.Net.dll"));
-        var method = net.GetType("OsmBuildings.Net.Http", throwOnError: true)!
+        var net = alc.LoadFromAssemblyPath(Path.Combine(modDir, "GEE.Net.dll"));
+        var method = net.GetType("GEE.Net.Http", throwOnError: true)!
             .GetMethod("Get", BindingFlags.Public | BindingFlags.Static)!;
         return method.CreateDelegate<Func<string, string, byte[]>>();
     }

@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>User settings, stored as settings.json next to the mod.</summary>
 public sealed class Settings
@@ -74,8 +74,6 @@ public sealed class Settings
     public double FarMaxAltitudeKm { get; set; } = 80;
     public double FarPlacementBudgetMs { get; set; } = 2;
 
-    /// <summary>By day, towns and cities as grey built-up areas seen from altitude and orbit (from the city light data).</summary>
-    public bool CitiesFromAltitude { get; set; } = false;
     /// <summary>
     /// Sentinel-2 cloudless satellite imagery (EOX, 2016, CC BY 4.0) over the ground when seen from altitude: fades in
     /// from SatelliteFadeFromM to four times that height.

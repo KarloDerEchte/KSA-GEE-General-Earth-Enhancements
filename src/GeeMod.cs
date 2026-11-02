@@ -5,16 +5,16 @@ using HarmonyLib;
 using KSA;
 using StarMap.API;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// Places OpenStreetMap buildings on Earth: footprints come from OpenMapTiles vector tiles around the camera,
 /// reduced to a few boxes each and drawn through the game's static object renderer (no collisions).
 /// </summary>
 [StarMapMod]
-public class OsmBuildingsMod
+public class GeeMod
 {
-    internal static OsmBuildingsMod? Instance;
+    internal static GeeMod? Instance;
 
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private string _dir = "";
@@ -104,7 +104,7 @@ public class OsmBuildingsMod
         Instance = this;
         try
         {
-            _dir = Path.GetDirectoryName(typeof(OsmBuildingsMod).Assembly.Location)!;
+            _dir = Path.GetDirectoryName(typeof(GeeMod).Assembly.Location)!;
             _settingsPath = Path.Combine(_dir, "settings.json");
             _settings = Settings.Load(_settingsPath);
             _padRadiusAtLoad = _settings.LaunchPadClearRadiusKm;
@@ -119,12 +119,9 @@ public class OsmBuildingsMod
             GlowRenderer.Manager = _manager;
             GlowRenderer.Regional = _regional;
             GlowRenderer.Global = _global;
-            UrbanRenderer.Settings = _settings;
             SatelliteImagery.Settings = _settings;
             SatelliteImagery.ModDir = _dir;
-            UrbanRenderer.Regional = _regional;
-            UrbanRenderer.Global = _global;
-            _harmony = new Harmony("OsmBuildings");
+            _harmony = new Harmony("GEE");
             Patches.Apply(_harmony);
             Log.Info($"started, data dir {_dir}");
         }
@@ -141,7 +138,7 @@ public class OsmBuildingsMod
 
     internal void DrawMenu()
     {
-        if (!ImGui.BeginMenu("OSM Buildings"))
+        if (!ImGui.BeginMenu("GEE"))
             return;
         ((IGameViewportLifecycle)Program.MainViewport).SetMenuBarInUse(true);
         bool show = _settings.ShowWindow;
@@ -164,7 +161,7 @@ public class OsmBuildingsMod
         var manager = _manager!;
         ImGui.SetNextWindowSize(new float2(400, 0), ImGuiCond.FirstUseEver);
         bool open = true;
-        if (ImGui.Begin("OSM Buildings", ref open))
+        if (ImGui.Begin("GEE - General Earth Enhancements", ref open))
         {
             bool enabled = _settings.Enabled;
             if (ImGui.Checkbox("Show buildings", ref enabled))
@@ -204,12 +201,6 @@ public class OsmBuildingsMod
             }
             if (_settings.SatelliteImagery)
                 ImGui.Text($"Satellite: {SatelliteImagery.LastTiles} tiles drawn, {SatelliteImagery.LoadedLayers} loaded{(SatelliteImagery.LastError is { } se ? ", " + se : "")}");
-            bool cities = _settings.CitiesFromAltitude;
-            if (ImGui.Checkbox("Cities seen from altitude (by day)", ref cities))
-            {
-                _settings.CitiesFromAltitude = cities;
-                Changed();
-            }
             bool far = _settings.FarBuildings;
             if (ImGui.Checkbox("Far buildings (simplified, beyond the loaded tiles)", ref far))
             {

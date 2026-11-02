@@ -5,7 +5,7 @@ using Brutal.VulkanApi.Abstractions;
 using KSA;
 using RenderCore;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// One glow sprite: camera-relative position (ego axes) and radius, colour and largest on-screen radius as four
@@ -35,7 +35,7 @@ public struct GlowInstance
 /// smaller than that is spread over the minimum size at the same total brightness, so a city seen from orbit
 /// sums up to a lit patch instead of flickering sub-pixel dots.
 /// </summary>
-internal sealed class GlowTechnique() : InstancedPass<GlowInstance>("OsmBuildingsGlow", VertexShader, FragmentShader, MaxSprites, 4)
+internal sealed class GlowTechnique() : InstancedPass<GlowInstance>("GEEGlow", VertexShader, FragmentShader, MaxSprites, 4)
 {
     public const int MaxSprites = 400_000;
 

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Brutal.Numerics;
 using KSA;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// City lights for the view from altitude and orbit, where building tiles are far too small and many. Zoom 8
@@ -79,7 +79,7 @@ public sealed class RegionalLights : IDisposable
         _maxLightsPerTile = zoom >= RegionalZoom ? 50_000 : 80_000;
         for (int i = 0; i < 2; i++)
         {
-            var worker = new Thread(WorkerLoop) { IsBackground = true, Name = $"OsmBuildings lights z{zoom} {i}" };
+            var worker = new Thread(WorkerLoop) { IsBackground = true, Name = $"GEE lights z{zoom} {i}" };
             _workers.Add(worker);
             worker.Start();
         }
@@ -120,7 +120,7 @@ public sealed class RegionalLights : IDisposable
         bool global = _finer != null;
         // The global tiles cover the whole night side at all times (a few dozen cached tiles), so nothing
         // loads in while the camera zooms or turns.
-        Active = _settings.Enabled && (_settings.CityGlow || _settings.CitiesFromAltitude) && altitudeKm < 1e6 && (global
+        Active = _settings.Enabled && _settings.CityGlow && altitudeKm < 1e6 && (global
             ? _settings.GlobalLights
             : _settings.RegionalLights && altitudeKm > 5);
 
@@ -129,8 +129,7 @@ public sealed class RegionalLights : IDisposable
             _lastScan = now;
             // Beyond half the circumference means every tile.
             double radiusKm = global ? _planetRadius * Math.PI / 1000 + 100 : Math.Min(_settings.RegionalRadiusKm, horizonKm + 300);
-            // The day side is needed too when towns are drawn by day (UrbanRenderer).
-            RequestAround(lat, lon, radiusKm, _settings.CitiesFromAltitude ? null : NightLights.SunDirCcf(body, _settings), global ? 0.6 : 0.25);
+            RequestAround(lat, lon, radiusKm, NightLights.SunDirCcf(body, _settings), global ? 0.6 : 0.25);
             Evict(lat, lon, radiusKm * 1.25 + 200);
         }
         Build(body, 1.5);

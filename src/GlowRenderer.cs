@@ -3,7 +3,7 @@ using Brutal.VulkanApi;
 using Brutal.VulkanApi.Abstractions;
 using KSA;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// Glowing building, street and city lights at night, visible from the ground up to orbit. Each frame picks the

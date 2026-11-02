@@ -1,4 +1,4 @@
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// The overground pipelines of Launch Complex 39A (PipelineData, from OSM): the vector tiles carry no pipelines, so

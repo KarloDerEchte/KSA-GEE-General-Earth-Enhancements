@@ -6,7 +6,7 @@ using Brutal.VulkanApi.Abstractions;
 using KSA;
 using RenderCore;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// One building box for the window pass: the box axes and base point in ego axes (row vectors, as the
@@ -32,7 +32,7 @@ public struct FacadeInstance
 /// colour = window light + facade * (1 - glass share). Far away, where a window is smaller than a pixel, the
 /// grid gives way to its average so it does not shimmer.
 /// </summary>
-internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("OsmBuildingsFacade", VertexShader, FragmentShader, MaxBoxes, 24)
+internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("GEEFacade", VertexShader, FragmentShader, MaxBoxes, 24)
 {
     public const int MaxBoxes = 200_000;
 

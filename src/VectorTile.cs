@@ -1,4 +1,4 @@
-namespace OsmBuildings;
+namespace GEE;
 
 public sealed class TileData
 {

@@ -1,4 +1,4 @@
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>One road line within a tile.</summary>
 public sealed class RawRoad

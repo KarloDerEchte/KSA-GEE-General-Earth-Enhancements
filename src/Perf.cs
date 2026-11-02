@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// Main-thread time spent in the mod's parts, summed per section and written to the log every 10 s as milliseconds

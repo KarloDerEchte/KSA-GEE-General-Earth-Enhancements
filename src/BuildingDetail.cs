@@ -1,6 +1,6 @@
 using Brutal.Numerics;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// Real-world relief on top of a building's plain box, made of more instances of the same unit boxes: a plinth at

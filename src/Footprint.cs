@@ -1,4 +1,4 @@
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>Oriented rectangle in a local east/north frame, in meters. Angle turns the A axis from east toward north.</summary>
 public readonly record struct Box2(double CenterEast, double CenterNorth, double Angle, double LengthA, double LengthB);

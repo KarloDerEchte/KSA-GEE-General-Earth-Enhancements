@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <AssemblyName>OsmBuildings</AssemblyName>
-    <RootNamespace>OsmBuildings</RootNamespace>
+    <AssemblyName>GEE</AssemblyName>
+    <RootNamespace>GEE</RootNamespace>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -35,6 +35,6 @@
     <Reference Include="0Harmony"><HintPath>$(StarMapDir)0Harmony.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="OsmBuildingsMod.cs;Log.cs;Settings.cs;Buildings.cs;Roads.cs;VectorTile.cs;Footprint.cs;Placement.cs;Clutter.cs;ClutterClearing.cs;NightLights.cs;InstancedPass.cs;FacadeTechnique.cs;Tiles.cs;NetLoader.cs;BuildingRenderer.cs;Patches.cs;LightSet.cs;GlowTechnique.cs;GlowRenderer.cs;RegionalLights.cs;Landmarks.cs;AutoShot.cs;BuildingDetail.cs;Pipelines.cs;PipelineData.cs;Structures.cs;StructureData.cs;BuiltUp.cs;PublicLamps.cs;CrewArm.cs;Vapor.cs;FarField.cs;Urban.cs;Satellite.cs;Perf.cs" />
+    <Compile Include="GeeMod.cs;Log.cs;Settings.cs;Buildings.cs;Roads.cs;VectorTile.cs;Footprint.cs;Placement.cs;Clutter.cs;ClutterClearing.cs;NightLights.cs;InstancedPass.cs;FacadeTechnique.cs;Tiles.cs;NetLoader.cs;BuildingRenderer.cs;Patches.cs;LightSet.cs;GlowTechnique.cs;GlowRenderer.cs;RegionalLights.cs;Landmarks.cs;AutoShot.cs;BuildingDetail.cs;Pipelines.cs;PipelineData.cs;Structures.cs;StructureData.cs;BuiltUp.cs;PublicLamps.cs;CrewArm.cs;Vapor.cs;FarField.cs;Satellite.cs;Perf.cs" />
   </ItemGroup>
 </Project>

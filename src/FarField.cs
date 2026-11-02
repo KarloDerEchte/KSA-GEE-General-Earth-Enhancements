@@ -2,7 +2,7 @@ using System.Diagnostics;
 using Brutal.Numerics;
 using KSA;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>One zoom 13 tile of the far field: simplified buildings as single boxes.</summary>
 internal sealed class FarTile(int x, int y)
@@ -66,7 +66,7 @@ internal sealed class FarField : IDisposable
         _source = source;
         for (int i = 0; i < 2; i++)
         {
-            var worker = new Thread(WorkerLoop) { IsBackground = true, Name = $"OsmBuildings far field {i}" };
+            var worker = new Thread(WorkerLoop) { IsBackground = true, Name = $"GEE far field {i}" };
             _workers.Add(worker);
             worker.Start();
         }

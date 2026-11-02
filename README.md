@@ -1,16 +1,16 @@
-# OsmBuildings
+# GEE - General Earth Enhancements
 
 A StarMap mod for **Kitten Space Agency** that puts the real world on Earth:
 buildings and roads from OpenStreetMap around the camera, city lights at night, and satellite imagery when you look
 down from altitude.
 
 > **Heads-up:** this mod was programmed entirely by Claude (Anthropic's AI). It works, but it is a hobby project:
-> don't expect anything special, and expect rough edges.
+> don't expect anything too special, and expect rough edges.
 
-<!-- Screenshots: put the images in docs/screenshots/ and list them here, e.g.
-![LC-39A at dusk](docs/screenshots/pad.jpg)
-![Satellite imagery from orbit](docs/screenshots/orbit.jpg)
--->
+<img width="2546" height="1361" alt="image" src="https://github.com/user-attachments/assets/182b5420-def4-4524-948c-f4d95229c17e" />
+<img width="1252" height="1135" alt="image" src="https://github.com/user-attachments/assets/cc1b911e-1ade-4f7e-be20-291b9606d06a" />
+<img width="2554" height="1359" alt="image" src="https://github.com/user-attachments/assets/af184066-ede0-49c8-ae8a-e20691bf3880" />
+<img width="1120" height="700" alt="image" src="https://github.com/user-attachments/assets/0ae2d02c-c1c7-43ac-af69-9eeb7b87b83b" />
 
 ## Features
 
@@ -20,20 +20,25 @@ down from altitude.
 - **Far field**: simplified buildings out to tens of kilometres, so cities stay visible after launch.
 - **Night**: lit windows, street lights in towns, and city lights visible from orbit.
 - **Satellite imagery** (Sentinel-2 cloudless, 2016) draped over the ground when seen from altitude.
-- **Launch Complex 39A**: the fixed service structure (from NASA's "Gantry" model) with a crew access arm that
-  docks and undocks, an integration tower, water and lightning towers, hangar, tank farm with boil-off vapour, and
-  pipelines. Also LC-39B's towers and the Vehicle Assembly Building.
+- **Launch complexes** at all of the game's pads on Earth, placed from OpenStreetMap data:
+  - **LC-39A** (Kennedy): the fixed service structure (from NASA's "Gantry" model) with a crew access arm that docks
+    and undocks, the Starship integration tower, water and lightning towers, hangar, tank farm with boil-off vapour,
+    and pipelines. Also LC-39B's towers and the Vehicle Assembly Building.
+  - **Starbase** (Boca Chica): both Starship launch towers with their catch arms, and the tank farm.
+  - **ELA-4** (Kourou): the Ariane 6 mobile gantry, the four lightning masts and the water tower.
+  - **SLC-4E** (Vandenberg): the launch tower and the helium and propellant tanks.
+  - **LC-1** (Mahia): the lightning masts and the tank rows of pads A and B.
 
 ## Install
 
 1. Install Kitten Space Agency and the StarMap mod loader.
 2. Download the release zip and extract it so that you have
-   `Documents/My Games/Kitten Space Agency/mods/OsmBuildings/` with `mod.toml`, `OsmBuildings.dll`, `Assets.xml`,
+   `Documents/My Games/Kitten Space Agency/mods/GEE/` with `mod.toml`, `GEE.dll`, `Assets.xml`,
    `Meshes/` and `Textures/` in it.
 3. Start the game through StarMap. The mod window is in the mods menu.
 
 The mod needs an internet connection the first time an area is shown. Everything downloaded is cached under
-`mods/OsmBuildings/cache/`, and "Clear download cache" in the window empties it.
+`mods/GEE/cache/`, and "Clear download cache" in the window empties it.
 
 ## Settings
 
@@ -78,7 +83,7 @@ cd src
 dotnet build -c Release
 ```
 
-The build writes `OsmBuildings.dll` into the mod folder. If the game is not installed in
+The build writes `GEE.dll` into the mod folder. If the game is not installed in
 `C:\Program Files\Ahwoo\Games\Kitten Space Agency\`, pass `-p:KsaDir="<game folder>\"`. Close the game first: it
 locks the DLL.
 
@@ -99,13 +104,19 @@ Next up:
 
 ## Contributing
 
-Contributions are welcome: bug reports, ideas, screenshots and pull requests. Open an issue or a pull request on
-GitHub. By contributing you agree that your contribution is licensed under the GPL-3.0 (with the additional
+Contributions are welcome: bug reports, ideas, screenshots and pull requests.
+
+- **Have an idea or found a bug?** Please open an issue on GitHub. Feature wishes, places that look wrong, crashes,
+  anything: every issue helps.
+- **Want to fix or build something yourself?** Pull requests are very welcome, small or large. If it is a bigger
+  change, opening an issue first to talk about it is a good idea, but not required.
+
+By contributing you agree that your contribution is licensed under the GPL-3.0 (with the additional
 permission in `NOTICE.md`), like the rest of the mod.
 
 ## Credits and licenses
 
-OsmBuildings is free software under the **GNU General Public License v3.0** (`LICENSE`), with an additional
+GEE is free software under the **GNU General Public License v3.0** (`LICENSE`), with an additional
 permission to combine it with Kitten Space Agency, StarMap and Harmony (`NOTICE.md`). You may use, change and share
 it; if you distribute a modified version, you must publish its complete source code under the same license. Data and
 models from others keep their own licenses; `NOTICE.md` has the details.

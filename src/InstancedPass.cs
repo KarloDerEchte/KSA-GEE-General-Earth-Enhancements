@@ -7,7 +7,7 @@ using Core;
 using KSA;
 using RenderCore;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// An instanced draw of our own in the main pass, with shaders compiled from source in this assembly. Instance

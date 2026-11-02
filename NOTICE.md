@@ -1,10 +1,10 @@
 # License and third-party material
 
-## OsmBuildings
+## GEE - General Earth Enhancements
 
-Copyright (C) 2026 The OsmBuildings contributors
+Copyright (C) 2026 KarloDerEchte and the GEE contributors
 
-OsmBuildings' source code and its procedurally generated meshes and textures are free software: you can redistribute
+GEE's source code and its procedurally generated meshes and textures are free software: you can redistribute
 and/or modify them under the terms of the GNU General Public License version 3 (`LICENSE`). Anyone who distributes a
 modified version must make its complete source code available under the same license.
 
@@ -20,7 +20,7 @@ code of the covered work.
 
 ## Third-party data, models and services
 
-OsmBuildings uses the following third-party material, under these terms.
+GEE uses the following third-party material, under these terms.
 
 ### Downloaded while you play (not part of this repository)
 
@@ -37,7 +37,7 @@ mod.
 
 | What | Where | License | Attribution |
 |---|---|---|---|
-| Overground pipelines, horizontal tanks and payload tent at LC-39A; landmark positions and outlines | `src/PipelineData.cs`, `src/StructureData.cs`, `src/Landmarks.cs` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/): these extracts are derived from OpenStreetMap and stay under the ODbL | © OpenStreetMap contributors |
+| Pipelines at LC-39A; tanks and the payload tent at LC-39A, Starbase, SLC-4E and LC-1; positions and outlines of the modelled towers and buildings | `src/PipelineData.cs`, `src/StructureData.cs`, `src/Landmarks.cs` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/): these extracts are derived from OpenStreetMap and stay under the ODbL | © OpenStreetMap contributors |
 | LC-39 fixed service structure (launch tower) mesh | `src/tools/data/fss_nasa.npy`, built into `Meshes/` | NASA 3D Resources model ["Gantry"](https://science.nasa.gov/3d-resources/gantry/) (NASA media, generally not subject to copyright). Its use does not imply endorsement by NASA. | NASA / Michael D. Carbajal |
 
 All other meshes and textures (facades, roofs, the VAB and hangar facades, towers, tanks, crew access arm, roads)

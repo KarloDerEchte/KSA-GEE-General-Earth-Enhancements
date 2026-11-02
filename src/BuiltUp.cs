@@ -1,4 +1,4 @@
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// Where a tile is built up, from its own buildings: counts per 80 m cell. Street lights in many countries (Germany

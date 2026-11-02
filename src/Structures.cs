@@ -1,8 +1,8 @@
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
-/// Odd shapes the vector tiles only give as plain outlines: the horizontal propellant tanks and the payload tent of
-/// Launch Complex 39A (StructureData, from OSM). They are placed with their own models, and the tile outlines under
+/// Odd shapes the vector tiles only give as plain outlines, or not at all: horizontal and upright propellant tanks
+/// and the payload tent of the launch complexes (StructureData, from OSM). They are placed with their own models, and the tile outlines under
 /// them are dropped (Covers). Kept free of game types so it can be tested offline.
 /// </summary>
 public static class Structures
@@ -17,7 +17,23 @@ public static class Structures
             var (kind, lat, lon, angle, length, width) = StructureData.All[i];
             if (lat < south || lat >= north || lon < west || lon >= east)
                 continue;
-            bool tent = kind == "Tent", dome = kind == "Dome";
+            bool tent = kind == "Tent", dome = kind == "Dome", upright = kind == "VTank";
+            if (upright)
+            {
+                // An upright round tank: Length is its diameter, Width its height; the tank code adds cap and details.
+                data.Buildings.Add(new RawBuilding
+                {
+                    LaunchComplex = true,
+                    Id = 1_100_000_000 + i,
+                    Lat = lat,
+                    Lon = lon,
+                    Height = width,
+                    Variant = Buildings.TankVariant,
+                    Style = Buildings.StyleNone,
+                    Boxes = { new Box2(0, 0, 0, length, length) },
+                });
+                continue;
+            }
             data.Buildings.Add(new RawBuilding
             {
                 LaunchComplex = true,
@@ -39,8 +55,9 @@ public static class Structures
     /// <summary>True if a building outline (its centre) lies within one of the structures: it is replaced by the model.</summary>
     public static bool Covers(double lat, double lon)
     {
-        foreach (var (_, sLat, sLon, angle, length, width) in StructureData.All)
+        foreach (var (kind, sLat, sLon, angle, length, w) in StructureData.All)
         {
+            double width = kind == "VTank" ? length : w;
             double north = (lat - sLat) * MetersPerDegree;
             if (Math.Abs(north) > 40)
                 continue;

@@ -3,7 +3,7 @@ using System.Reflection;
 using Brutal.Numerics;
 using KSA;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// Feeds building instances to the game's static object renderer. Runs right after the game collects
@@ -411,7 +411,7 @@ internal static class BuildingRenderer
             return true;
         for (int v = 0; v < Models.Length; v++)
         {
-            string id = $"OsmBuildings_Box{v}_Model";
+            string id = $"GEE_Box{v}_Model";
             Models[v] = all.FirstOrDefault(m => m.Template.Id == id);
         }
         _resolvedFrom = all.Count;

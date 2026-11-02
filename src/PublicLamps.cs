@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>What OpenStreetMap knows about the street lighting of one tile.</summary>
 public sealed class LampData
@@ -49,7 +49,7 @@ public sealed class LampData
 internal sealed class PublicLamps : IDisposable
 {
     private readonly string[] Endpoints;
-    private const string UserAgent = "KSA-OsmBuildings/0.2 (Kitten Space Agency mod; street lights)";
+    private const string UserAgent = "KSA-GEE/0.2 (Kitten Space Agency mod; street lights)";
     private const string Roads = "^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|pedestrian|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$";
     private const int MaxAttempts = 4;
 
@@ -81,7 +81,7 @@ internal sealed class PublicLamps : IDisposable
         for (int i = 0; i < Endpoints.Length; i++)
         {
             int endpoint = i;
-            var worker = new Thread(() => WorkerLoop(endpoint)) { IsBackground = true, Name = $"OsmBuildings street lights {i}" };
+            var worker = new Thread(() => WorkerLoop(endpoint)) { IsBackground = true, Name = $"GEE street lights {i}" };
             _workers.Add(worker);
             worker.Start();
         }

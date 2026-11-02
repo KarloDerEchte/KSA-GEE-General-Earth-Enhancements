@@ -1,4 +1,4 @@
-"""Procedural facade and roof textures for the OsmBuildings variants (numpy + Pillow).
+"""Procedural facade and roof textures for the GEE variants (numpy + Pillow).
 
 The textures are stretched over each wall and roof, so only detail that survives any stretch is painted:
 weathering streaks running down, soil at the foot, a shadowed cornice, ambient occlusion in the AO channel,

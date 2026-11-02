@@ -3,7 +3,7 @@ using System.Diagnostics;
 using Brutal.Numerics;
 using KSA;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// Takes trees, shrubs and grass off roads and out of buildings. Worker threads compute which clutter

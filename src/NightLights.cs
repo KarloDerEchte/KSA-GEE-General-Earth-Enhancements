@@ -2,7 +2,7 @@ using Brutal.Numerics;
 using KSA;
 using KSA.Rendering.Lighting;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>
 /// After sunset, puts warm point lights in front of building facades and above roads (street lamps).

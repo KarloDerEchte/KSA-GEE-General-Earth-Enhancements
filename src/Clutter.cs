@@ -1,7 +1,7 @@
 using System.Numerics;
 using Brutal.Numerics;
 
-namespace OsmBuildings;
+namespace GEE;
 
 /// <summary>Cell grid of one ground clutter ecotype (trees, shrubs, grass) and how far to keep it off our footprints.</summary>
 public readonly record struct ClutterGrid(int Ecotype, int Resolution, double ClearanceMeters);

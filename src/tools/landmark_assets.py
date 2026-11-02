@@ -402,27 +402,27 @@ def hif_mesh():
 
 def meshes():
     """Meshes for the shared atlas GLB."""
-    return ([("OsmBuildings_VabHighBay", atlas_box(VAB_REGIONS))] + structure_assets.meshes()
-            + [("OsmBuildings_HifHangar", hif_mesh())])
+    return ([("GEE_VabHighBay", atlas_box(VAB_REGIONS))] + structure_assets.meshes()
+            + [("GEE_HifHangar", hif_mesh())])
 
 
 def write(mod_dir, first_variant, write_png):
     """Writes the landmark textures; returns the Assets.xml lines. Variant numbers follow Landmarks.All."""
     tex = os.path.join(mod_dir, "Textures")
-    write_ktx2(os.path.join(tex, "OsmBuildings_Vab_Diffuse.ktx2"), vab_atlas())
+    write_ktx2(os.path.join(tex, "GEE_Vab_Diffuse.ktx2"), vab_atlas())
     # Painted aluminium: rough, not metallic.
-    write_png(os.path.join(tex, "OsmBuildings_Vab_PBR.png"), 4, 4, lambda x, y: bytes((255, 205, 0, 255)))
+    write_png(os.path.join(tex, "GEE_Vab_PBR.png"), 4, 4, lambda x, y: bytes((255, 205, 0, 255)))
     i = first_variant
     return [f'  <!-- variant {i}: landmark Vehicle Assembly Building -->',
-            '  <PbrMaterial Id="OsmBuildings_Vab_Material">',
-            '    <Diffuse Path="Textures/OsmBuildings_Vab_Diffuse.ktx2" Category="Vessel" />',
-            '    <Normal Path="Textures/OsmBuildings_Normal.png" Category="Vessel" />',
-            '    <AoRoughMetal Path="Textures/OsmBuildings_Vab_PBR.png" Category="Vessel" />',
+            '  <PbrMaterial Id="GEE_Vab_Material">',
+            '    <Diffuse Path="Textures/GEE_Vab_Diffuse.ktx2" Category="Vessel" />',
+            '    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />',
+            '    <AoRoughMetal Path="Textures/GEE_Vab_PBR.png" Category="Vessel" />',
             '  </PbrMaterial>',
-            f'  <StaticObject Id="OsmBuildings_Box{i}">',
-            f'    <PartModel Id="OsmBuildings_Box{i}_Model">',
-            '      <Mesh Id="OsmBuildings_VabHighBay" />',
-            '      <Material Id="OsmBuildings_Vab_Material" />',
+            f'  <StaticObject Id="GEE_Box{i}">',
+            f'    <PartModel Id="GEE_Box{i}_Model">',
+            '      <Mesh Id="GEE_VabHighBay" />',
+            '      <Material Id="GEE_Vab_Material" />',
             '    </PartModel>',
             '  </StaticObject>'] + structure_assets.write(mod_dir, first_variant + 1, write_png) + hif_xml(
         mod_dir, first_variant + 1 + len(structure_assets.TOWERS), write_png)
@@ -430,17 +430,17 @@ def write(mod_dir, first_variant, write_png):
 
 def hif_xml(mod_dir, i, write_png):
     tex = os.path.join(mod_dir, "Textures")
-    write_ktx2(os.path.join(tex, "OsmBuildings_Hif_Diffuse.ktx2"), hif_atlas())
-    write_png(os.path.join(tex, "OsmBuildings_Hif_PBR.png"), 4, 4, lambda x, y: bytes((255, 175, 70, 255)))
+    write_ktx2(os.path.join(tex, "GEE_Hif_Diffuse.ktx2"), hif_atlas())
+    write_png(os.path.join(tex, "GEE_Hif_PBR.png"), 4, 4, lambda x, y: bytes((255, 175, 70, 255)))
     return [f'  <!-- variant {i}: landmark SpaceX Horizontal Integration Facility -->',
-            '  <PbrMaterial Id="OsmBuildings_Hif_Material">',
-            '    <Diffuse Path="Textures/OsmBuildings_Hif_Diffuse.ktx2" Category="Vessel" />',
-            '    <Normal Path="Textures/OsmBuildings_Normal.png" Category="Vessel" />',
-            '    <AoRoughMetal Path="Textures/OsmBuildings_Hif_PBR.png" Category="Vessel" />',
+            '  <PbrMaterial Id="GEE_Hif_Material">',
+            '    <Diffuse Path="Textures/GEE_Hif_Diffuse.ktx2" Category="Vessel" />',
+            '    <Normal Path="Textures/GEE_Normal.png" Category="Vessel" />',
+            '    <AoRoughMetal Path="Textures/GEE_Hif_PBR.png" Category="Vessel" />',
             '  </PbrMaterial>',
-            f'  <StaticObject Id="OsmBuildings_Box{i}">',
-            f'    <PartModel Id="OsmBuildings_Box{i}_Model">',
-            '      <Mesh Id="OsmBuildings_HifHangar" />',
-            '      <Material Id="OsmBuildings_Hif_Material" />',
+            f'  <StaticObject Id="GEE_Box{i}">',
+            f'    <PartModel Id="GEE_Box{i}_Model">',
+            '      <Mesh Id="GEE_HifHangar" />',
+            '      <Material Id="GEE_Hif_Material" />',
             '    </PartModel>',
             '  </StaticObject>']

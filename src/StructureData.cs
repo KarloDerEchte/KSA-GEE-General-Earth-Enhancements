@@ -1,8 +1,8 @@
 // Data (c) OpenStreetMap contributors, available under the Open Database License 1.0
 // (https://opendatacommons.org/licenses/odbl/1-0/). Generated from OpenStreetMap; see NOTICE.md.
-namespace OsmBuildings;
+namespace GEE;
 
-/// <summary>Horizontal tanks and the payload tent at Launch Complex 39A (OSM): kind, latitude, longitude, angle of the long side (degrees counter-clockwise from east), length, width; generated.</summary>
+/// <summary>Tanks and the payload tent of the launch complexes (OSM): kind, latitude, longitude, angle of the long side (degrees counter-clockwise from east), length, width; generated.</summary>
 internal static class StructureData
 {
     public static readonly (string Kind, double Lat, double Lon, double AngleDeg, double Length, double Width)[] All =
@@ -30,5 +30,85 @@ internal static class StructureData
         ("HTank", 28.6086469, -80.6021892, 143.57, 29.06, 2.95),
         ("HTank", 28.6084187, -80.6023996, 144.06, 44.62, 3.62),
         ("Dome", 28.6092510, -80.6029400, 0.00, 15.00, 15.00),
+        // Starbase: tanks from OSM (man_made=storage_tank); VTank = upright, Length = diameter, Width = height.
+        ("VTank", 25.9973048, -97.1576977, 0, 3.29, 4.6),  //  way 842244220, 19 nodes
+        ("VTank", 25.9973163, -97.1577440, 0, 3.35, 4.7),  //  way 842244221, 19 nodes
+        ("HTank", 25.9970135, -97.1544627, 77.08, 50.30, 6.48),  // liquid_methane,_gaseous_methane way 1002874660
+        ("HTank", 25.9969985, -97.1543849, 77.09, 50.30, 6.47),  // liquid_methane,_gaseous_methane way 1002874661
+        ("HTank", 25.9971752, -97.1554294, 77.01, 48.56, 5.84),  // liquid_oxygen,_gaseous_oxygen way 1240890702
+        ("HTank", 25.9971603, -97.1553621, 76.86, 48.56, 5.88),  // liquid_oxygen,_gaseous_oxygen way 1240890703
+        ("HTank", 25.9971418, -97.1552853, 76.98, 47.86, 5.55),  // liquid_nitrogen;gaseous_nitrogen way 1240890704
+        ("HTank", 25.9971323, -97.1552203, 76.79, 48.56, 5.69),  // liquid_nitrogen;gaseous_nitrogen way 1240890705
+        ("HTank", 25.9971185, -97.1551561, 76.94, 48.55, 5.66),  // liquid_nitrogen;gaseous_nitrogen way 1240890706
+        ("HTank", 25.9971053, -97.1550902, 76.68, 48.55, 5.72),  // liquid_nitrogen;gaseous_nitrogen way 1240890707
+        ("HTank", 25.9971905, -97.1554975, 76.90, 48.56, 5.78),  // liquid_oxygen,_gaseous_oxygen way 1248980685
+        ("HTank", 25.9972058, -97.1555645, 76.78, 48.54, 5.88),  // liquid_oxygen,_gaseous_oxygen way 1248980686
+        ("HTank", 25.9972203, -97.1556318, 76.67, 48.55, 5.71),  // liquid_oxygen,_gaseous_oxygen way 1248980687
+        ("VTank", 25.9975033, -97.1553746, 0, 2.77, 6.0),  //  way 1254512852, 19 nodes
+        ("VTank", 25.9974948, -97.1553391, 0, 2.77, 6.0),  //  way 1254512853, 19 nodes
+        ("HTank", 25.9972379, -97.1557166, 77.29, 48.60, 5.96),  // liquid_oxygen,_gaseous_oxygen way 1295515346
+        ("HTank", 25.9972652, -97.1558512, 77.29, 48.60, 5.96),  // liquid_oxygen,_gaseous_oxygen way 1352374668
+        ("HTank", 25.9972513, -97.1557847, 77.29, 48.60, 5.96),  // liquid_oxygen,_gaseous_oxygen way 1352374669
+        ("VTank", 25.9975989, -97.1570055, 0, 2.82, 4.0),  // nitrogen way 1454334525, 19 nodes
+        ("VTank", 25.9976095, -97.1570529, 0, 2.82, 4.0),  // nitrogen way 1454334526, 19 nodes
+        ("VTank", 25.9976385, -97.1571897, 0, 2.82, 4.0),  // nitrogen way 1454334527, 19 nodes
+        ("VTank", 25.9976480, -97.1572337, 0, 2.82, 4.0),  // nitrogen way 1454334528, 19 nodes
+        ("VTank", 25.9971171, -97.1560574, 0, 2.82, 4.0),  //  way 1454334529, 19 nodes
+        ("VTank", 25.9971292, -97.1561159, 0, 2.82, 4.0),  //  way 1454334530, 19 nodes
+        ("HTank", 25.9974151, -97.1573712, 75.55, 39.31, 3.36),  // water way 1454334531
+        ("HTank", 25.9974235, -97.1574078, 75.46, 39.36, 3.35),  // water way 1454334532
+        ("HTank", 25.9974322, -97.1574450, 75.30, 39.36, 3.52),  // water way 1454334533
+        ("HTank", 25.9974415, -97.1574826, 75.13, 39.37, 3.42),  // water way 1454334534
+        ("HTank", 25.9973803, -97.1572486, 75.46, 26.25, 3.50),  // water way 1454334535
+        ("HTank", 25.9973711, -97.1572107, 75.23, 26.23, 3.59),  // water way 1454334536
+        ("HTank", 25.9973625, -97.1571740, 75.42, 26.13, 3.48),  // water way 1454334537
+        ("HTank", 25.9973543, -97.1571376, 75.89, 25.96, 3.35),  // water way 1454334538
+        ("VTank", 25.9975347, -97.1555449, 0, 2.77, 6.0),  //  way 1454334540, 19 nodes
+        ("VTank", 25.9975684, -97.1556907, 0, 2.77, 6.0),  //  way 1454334541, 19 nodes
+        ("HTank", 25.9970087, -97.1538946, 77.25, 31.47, 8.04),  // liquid_methane,_gaseous_methane way 1486752425
+        ("HTank", 25.9969907, -97.1538066, 77.24, 31.47, 8.06),  // liquid_methane,_gaseous_methane way 1486752426
+        ("HTank", 25.9969454, -97.1541190, 76.68, 48.55, 5.72),  // liquid_methane,_gaseous_methane way 1527519847
+        ("HTank", 25.9969606, -97.1541829, 76.68, 48.55, 5.72),  // liquid_methane,_gaseous_methane way 1527519848
+        ("HTank", 25.9969752, -97.1542480, 76.68, 48.55, 5.72),  // liquid_methane,_gaseous_methane way 1527519849
+        ("HTank", 25.9969886, -97.1543127, 76.69, 48.56, 5.72),  // liquid_methane,_gaseous_methane way 1527519850
+        ("HTank", 25.9974509, -97.1575195, 75.08, 39.30, 3.37),  // water way 1527519851
+        ("HTank", 25.9973457, -97.1570985, 75.66, 25.87, 3.62),  // water way 1527519852
+        ("HTank", 25.9973371, -97.1570590, 75.94, 25.84, 3.50),  // water way 1527519853
+        ("HTank", 25.9970915, -97.1550287, 76.68, 48.55, 5.72),  // liquid_oxygen,_gaseous_oxygen way 1534183741
+        ("HTank", 25.9970783, -97.1549668, 76.68, 48.55, 5.72),  // liquid_oxygen,_gaseous_oxygen way 1534183742
+        ("HTank", 25.9970362, -97.1545320, 76.68, 48.55, 5.72),  // liquid_nitrogen;gaseous_nitrogen way 1534183743
+        ("HTank", 25.9970515, -97.1545956, 76.68, 48.55, 5.72),  // liquid_nitrogen;gaseous_nitrogen way 1534183744
+        ("VTank", 25.9973137, -97.1547102, 0, 2.77, 6.0),  //  way 1534183745, 19 nodes
+        ("HTank", 25.9970643, -97.1546637, 76.68, 48.55, 5.72),  //  way 1550356734
+        ("HTank", 25.9970773, -97.1547267, 76.68, 48.55, 5.72),  //  way 1550356735
+        // Vandenberg SLC-4E: tanks from OSM (man_made=storage_tank); VTank = upright, Length = diameter, Width = height.
+        ("HTank", 34.6324601, -120.6107918, 85.06, 12.23, 3.19),  // helium way 401282654
+        ("HTank", 34.6326935, -120.6108860, 81.46, 19.42, 6.89),  //  way 562306548
+        ("HTank", 34.6317786, -120.6105080, 87.76, 13.34, 6.65),  //  way 562306553
+        ("HTank", 34.6324624, -120.6108295, 85.07, 12.23, 3.19),  // helium way 1420197408
+        ("HTank", 34.6324634, -120.6108706, 85.10, 12.23, 3.19),  // helium way 1420197409
+        ("HTank", 34.6324645, -120.6109118, 85.06, 12.22, 3.19),  // helium way 1420197410
+        ("HTank", 34.6324634, -120.6109555, 85.06, 12.23, 3.19),  // helium way 1420197411
+        ("HTank", 34.6317224, -120.6110922, 85.07, 12.23, 3.19),  // helium way 1420197412
+        ("HTank", 34.6317332, -120.6111418, 85.07, 12.23, 3.19),  // helium way 1420197413
+        ("HTank", 34.6317340, -120.6111830, 85.07, 12.23, 3.19),  // helium way 1420197414
+        // Mahia LC-1: tanks from OSM (man_made=storage_tank); VTank = upright, Length = diameter, Width = height.
+        ("HTank", -39.2612822, 177.8651102, 139.81, 6.58, 3.10),  //  way 556649772
+        ("HTank", -39.2612390, 177.8651494, 140.62, 6.58, 3.11),  //  way 803246939
+        ("HTank", -39.2612088, 177.8651801, 139.81, 6.58, 3.10),  //  way 911692671
+        ("HTank", -39.2611817, 177.8652105, 139.81, 6.58, 3.10),  //  way 911692672
+        ("HTank", -39.2611510, 177.8652446, 139.81, 6.58, 3.10),  //  way 911692673
+        ("HTank", -39.2611239, 177.8652741, 139.86, 6.58, 3.10),  //  way 911692674
+        ("VTank", -39.2616114, 177.8654145, 0, 3.93, 5.5),  //  way 911692682, 19 nodes
+        ("VTank", -39.2616403, 177.8653836, 0, 3.93, 5.5),  //  way 911692683, 19 nodes
+        ("VTank", -39.2616685, 177.8653531, 0, 3.93, 5.5),  //  way 911692684, 19 nodes
+        ("VTank", -39.2605648, 177.8665306, 0, 3.29, 4.6),  //  way 1100798535, 19 nodes
+        ("VTank", -39.2605437, 177.8664951, 0, 3.29, 4.6),  //  way 1100798536, 19 nodes
+        ("VTank", -39.2607332, 177.8652049, 0, 3.05, 4.3),  //  way 1100798543, 19 nodes
+        ("VTank", -39.2607142, 177.8651704, 0, 3.05, 4.3),  //  way 1100798544, 19 nodes
+        ("VTank", -39.2606912, 177.8651353, 0, 3.04, 4.3),  //  way 1100798545, 19 nodes
+        ("VTank", -39.2603734, 177.8651469, 0, 3.05, 4.3),  //  way 1100798546, 19 nodes
+        ("VTank", -39.2603479, 177.8651709, 0, 3.05, 4.3),  //  way 1100798547, 19 nodes
+        ("HTank", -39.2616057, 177.8655058, 52.54, 6.38, 2.62),  //  way 1100801530
     };
 }

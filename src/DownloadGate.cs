@@ -68,5 +68,5 @@ internal sealed class DownloadPausedException : Exception
     public readonly DateTime Until;
 
     public DownloadPausedException(string name, DateTime until)
-        : base($"{name} refused access (HTTP 403), downloads paused until {until.ToLocalTime():HH:mm}") => Until = until;
+        : base($"{name} refused access (HTTP 401/403), downloads paused until {until.ToLocalTime():HH:mm}") => Until = until;
 }

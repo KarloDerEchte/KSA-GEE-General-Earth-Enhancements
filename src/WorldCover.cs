@@ -75,7 +75,7 @@ internal sealed class WorldCover
                 compressed = File.ReadAllBytes(path);
             else
             {
-                compressed = _getRange(string.Format(UrlFormat, file), UserAgent, header.Offsets[index], header.Counts![index]);
+                compressed = Download(file, header.Offsets[index], header.Counts![index]);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.WriteAllBytes(path, compressed);
             }
@@ -89,9 +89,29 @@ internal sealed class WorldCover
         }
         catch (Exception e)
         {
-            LastError = $"WorldCover {file} block {index}: {e.Message}";
-            Log.Error(LastError);
+            // A refusal is logged once by the gate; the caller asks again for every cell until downloads resume.
+            LastError = e is DownloadPausedException ? e.Message : $"WorldCover {file} block {index}: {e.Message}";
+            if (e is not DownloadPausedException)
+                Log.Error(LastError);
             return false;
+        }
+    }
+
+    private readonly DownloadGate _gate = new("land cover server");
+
+    /// <summary>A range of a file from the server; paused for a while after the server refuses access.</summary>
+    private byte[] Download(string file, long offset, long length)
+    {
+        _gate.Check();
+        try
+        {
+            byte[] data = _getRange(string.Format(UrlFormat, file), UserAgent, offset, length);
+            _gate.Succeeded();
+            return data;
+        }
+        catch (Exception e) when (DownloadGate.IsRefusal(e))
+        {
+            throw _gate.Refused(e);
         }
     }
 
@@ -125,11 +145,11 @@ internal sealed class WorldCover
         {
             try
             {
-                head = _getRange(string.Format(UrlFormat, file), UserAgent, 0, HeaderBytes);
+                head = Download(file, 0, HeaderBytes);
             }
-            catch (InvalidOperationException e) when (e.Message.StartsWith("HTTP 404") || e.Message.StartsWith("HTTP 403"))
+            catch (InvalidOperationException e) when (e.Message.StartsWith("HTTP 404"))
             {
-                // No file: open ocean.
+                // No file: open ocean. (Only 404 says so: a 403 is a refusal, which must not mark land as sea for good.)
                 Directory.CreateDirectory(dir);
                 File.WriteAllText(missing, "");
                 return new Header(null, null);

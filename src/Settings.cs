@@ -40,7 +40,10 @@ public sealed class Settings
     public bool BuildingDetails { get; set; } = true;
     public double DetailDistanceKm { get; set; } = 0.8;
 
-    /// <summary>No buildings within this distance of a launch pad (roads stay); 0 turns it off.</summary>
+    /// <summary>
+    /// No plain buildings within this distance of a launch pad (roads, the launch complex models and the buildings of
+    /// a launch complex stay); 0 turns it off.
+    /// </summary>
     public double LaunchPadClearRadiusKm { get; set; } = 5;
     /// <summary>Removes the game's trees, shrubs and grass from roads and buildings.</summary>
     public bool ClearClutter { get; set; } = true;

@@ -199,6 +199,9 @@ internal static class SatelliteImagery
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     private static readonly ConcurrentDictionary<(int, int, int), byte[]> Decoded = new();
     private static readonly HashSet<(int, int, int)> Pending = new();
+    /// <summary>Tiles whose download failed, with the time they may be asked for again (under Lock).</summary>
+    private static readonly Dictionary<(int, int, int), DateTime> RetryAt = new();
+    private static readonly DownloadGate Gate = new("satellite imagery server");
     private static readonly Dictionary<(int, int, int), double> Wanted = new();
     /// <summary>Points per side of a tile's height grid, and the words the grid packs into (see SatInstance).</summary>
     private const int HeightPoints = 9, HeightWords = 28;
@@ -493,6 +496,12 @@ internal static class SatelliteImagery
             // Coarse tiles first (they stand in for everything below them), near before far.
             foreach (var key in Wanted.OrderBy(kv => kv.Key.Item1).ThenBy(kv => kv.Value).Select(kv => kv.Key).Take(64))
             {
+                if (RetryAt.TryGetValue(key, out var retry))
+                {
+                    if (DateTime.UtcNow < retry)
+                        continue;
+                    RetryAt.Remove(key);
+                }
                 if (!Layer.ContainsKey(key) && !Decoded.ContainsKey(key) && Pending.Add(key))
                 {
                     WorkQueue.Enqueue(key);
@@ -765,7 +774,16 @@ internal static class SatelliteImagery
                     }
                     else
                     {
-                        jpg = _get!(string.Format(Url, z, x, y), UserAgent);
+                        Gate.Check();
+                        try
+                        {
+                            jpg = _get!(string.Format(Url, z, x, y), UserAgent);
+                        }
+                        catch (Exception e) when (DownloadGate.IsRefusal(e))
+                        {
+                            throw Gate.Refused(e);
+                        }
+                        Gate.Succeeded();
                         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                         File.WriteAllBytes(path, jpg);
                     }
@@ -776,9 +794,13 @@ internal static class SatelliteImagery
                 }
                 catch (Exception e)
                 {
-                    LastError = $"satellite tile {z}/{x}/{y}: {e.Message}";
+                    LastError = e is DownloadPausedException ? e.Message : $"satellite tile {z}/{x}/{y}: {e.Message}";
+                    // Not asked for again at once: the view wants it every frame.
                     lock (Lock)
+                    {
                         Pending.Remove(key);
+                        RetryAt[key] = e is DownloadPausedException paused ? paused.Until : DateTime.UtcNow + TimeSpan.FromSeconds(30);
+                    }
                 }
             }
         }

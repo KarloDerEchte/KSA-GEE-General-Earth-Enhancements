@@ -261,8 +261,9 @@ internal sealed class FarField : IDisposable
             }
             catch (Exception ex)
             {
-                Log.Error($"far tile {tile.X}/{tile.Y}: {ex.Message}");
-                tile.RetryAt = DateTime.UtcNow + TimeSpan.FromSeconds(60);
+                if (ex is not DownloadPausedException)
+                    Log.Error($"far tile {tile.X}/{tile.Y}: {ex.Message}");
+                tile.RetryAt = ex is DownloadPausedException paused ? paused.Until : DateTime.UtcNow + TimeSpan.FromSeconds(60);
                 tile.State = FarTile.Stage.Failed;
             }
         }

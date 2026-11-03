@@ -359,11 +359,12 @@ public sealed class RegionalLights : IDisposable
                 if (ex.Message.Contains("HTTP 429") || ex.Message.Contains("HTTP 503"))
                     _source.Throttled();
                 LastError = $"regional tile {tile.Key.X}/{tile.Key.Y}: {ex.Message}";
-                Log.Error(LastError);
+                if (ex is not DownloadPausedException)
+                    Log.Error(LastError);
                 lock (_lock)
                 {
                     tile.State = State.Failed;
-                    tile.RetryAt = DateTime.UtcNow + TimeSpan.FromSeconds(60);
+                    tile.RetryAt = ex is DownloadPausedException paused ? paused.Until : DateTime.UtcNow + TimeSpan.FromSeconds(60);
                 }
             }
         }

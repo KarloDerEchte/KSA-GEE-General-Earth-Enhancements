@@ -271,7 +271,7 @@ public class GeeMod
                 Changed();
             }
             float padRadius = (float)_settings.LaunchPadClearRadiusKm;
-            if (ImGui.SliderFloat("No buildings near pads (km)", ref padRadius, 0f, 20f, "%.1f"))
+            if (ImGui.SliderFloat("No plain buildings near pads (km)", ref padRadius, 0f, 20f, "%.1f"))
             {
                 _settings.LaunchPadClearRadiusKm = padRadius;
                 Changed();
@@ -481,7 +481,7 @@ public class GeeMod
         else if (_settings.RealisticTrees && manager.Clutter.Trees is { } trees)
             ImGui.Text($"Tree cover: {trees.Removed:N0} removed in {trees.Cells:N0} cells ({trees.Status})");
         if (_settings.LaunchPadClearRadiusKm > 0)
-            ImGui.TextDisabled($"No buildings within {_settings.LaunchPadClearRadiusKm:0.#} km of {manager.LaunchPadCount} launch pads");
+            ImGui.TextDisabled($"No plain buildings within {_settings.LaunchPadClearRadiusKm:0.#} km of {manager.LaunchPadCount} launch pads");
         if (_settings.NightLights)
             ImGui.Text(NightLights.LastNightFactor > 0 ? $"Night: {NightLights.LastNightFactor:P0}, {NightLights.LastLights} lights on" : "Day: lights off");
         if (_settings.CityGlow)

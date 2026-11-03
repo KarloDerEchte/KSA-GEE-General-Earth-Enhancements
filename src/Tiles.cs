@@ -122,6 +122,8 @@ public sealed class TileManager : IDisposable
     private double _planetRadius = 6371000;
     private volatile float _cameraLat, _cameraLon;
     private DateTime _pauseUntil;
+    /// <summary>The vector tile server, shared with the far field and regional lights (they fetch through Fetch).</summary>
+    private readonly DownloadGate _gate = new("vector tile server");
     private double _lastScan;
     private readonly ClutterClearing _clutter;
     private Celestial? _padsBody;
@@ -451,7 +453,9 @@ public sealed class TileManager : IDisposable
                     }
                     continue;
                 }
-                if (NearLaunchPad(building.Lat, building.Lon))
+                // Only plain buildings are cleared around pads: the launch complex models and the complex's own
+                // plant, halls and tanks (its compound) stay.
+                if (!building.LaunchComplex && !Landmarks.InAnyCompound(building.Lat, building.Lon) && NearLaunchPad(building.Lat, building.Lon))
                     continue;
                 // OSM draws the pad itself (and what stands on it) as buildings; the game's pad model is there
                 // instead. Landmarks (negative ids) stay: the service tower is one.
@@ -780,13 +784,17 @@ public sealed class TileManager : IDisposable
                 bool throttled = message.Contains("HTTP 429") || message.Contains("HTTP 503");
                 if (throttled)
                     _pauseUntil = DateTime.UtcNow + TimeSpan.FromSeconds(30);
-                LastError = $"tile {tile.Key.X}/{tile.Key.Y}: {message}";
-                Log.Error(LastError);
+                // A refusal is logged once by the gate, not again for every tile.
+                LastError = ex is DownloadPausedException ? message : $"tile {tile.Key.X}/{tile.Key.Y}: {message}";
+                if (ex is not DownloadPausedException)
+                    Log.Error(LastError);
                 lock (_lock)
                 {
                     tile.Error = message;
                     tile.State = TileState.Failed;
-                    tile.RetryAt = DateTime.UtcNow + TimeSpan.FromSeconds(throttled ? 60 : 30);
+                    tile.RetryAt = ex is DownloadPausedException paused
+                        ? paused.Until
+                        : DateTime.UtcNow + TimeSpan.FromSeconds(throttled ? 60 : 30);
                 }
             }
         }
@@ -817,15 +825,28 @@ public sealed class TileManager : IDisposable
         }
         fromCache = false;
 
+        _gate.Check();
         var wait = _pauseUntil - DateTime.UtcNow;
         if (wait > TimeSpan.Zero && _cts.Token.WaitHandle.WaitOne(wait))
             throw new OperationCanceledException();
 
-        string url = TileUrlTemplate()
-            .Replace("{z}", zoom.ToString())
-            .Replace("{x}", x.ToString())
-            .Replace("{y}", y.ToString());
-        byte[] data = _get!(url, UserAgent);
+        byte[] data;
+        try
+        {
+            string url = TileUrlTemplate()
+                .Replace("{z}", zoom.ToString())
+                .Replace("{x}", x.ToString())
+                .Replace("{y}", y.ToString());
+            data = _get!(url, UserAgent);
+        }
+        catch (Exception e) when (DownloadGate.IsRefusal(e))
+        {
+            // The dated planet version in the URL may have gone: the TileJSON is read again after the pause.
+            lock (_netLock)
+                _tileUrlTemplate = null;
+            throw _gate.Refused(e);
+        }
+        _gate.Succeeded();
 
         Directory.CreateDirectory(dir);
         string tmp = $"{path}.{Environment.CurrentManagedThreadId}.tmp";

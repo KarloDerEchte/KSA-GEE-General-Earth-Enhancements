@@ -594,7 +594,8 @@ def main(argv):
         xml += lines
     xml.append("</Assets>")
     with open(os.path.join(MOD_DIR, "Trees.xml"), "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(xml) + "\n")
+        import port_xml  # KSA 2026.11.10 asset format
+        f.write(port_xml.convert_text("\n".join(xml) + "\n"))
     print(f"wrote Trees.xml, {len(objects)} clutter objects, {slot} card views")
     return 0
 

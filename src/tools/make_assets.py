@@ -12,6 +12,7 @@ import zlib
 
 import facade_assets
 import furniture_assets
+import house_assets
 import landmark_assets
 import structure_assets
 
@@ -28,6 +29,23 @@ VARIANTS = [
     ("metal", (185, 190, 195), (160, 165, 170), 140, 120),
     ("ochre", (210, 170, 100), (142, 90, 70), 230, 0),
 ]
+
+# More facade colours (Buildings.ExtraFacades, after the hip roofs): same columns as VARIANTS. Painted houses and
+# apartment blocks in pastel plaster, so a street is not one white.
+EXTRA_FACADES = [
+    ("cream", (232, 224, 200), (150, 148, 144), 232, 0),
+    ("pale yellow", (226, 208, 148), (146, 142, 134), 232, 0),
+    ("sage", (174, 188, 166), (140, 142, 138), 232, 0),
+    ("terracotta", (196, 122, 92), (138, 128, 120), 236, 0),
+    ("grey blue", (150, 166, 184), (136, 140, 146), 225, 0),
+    ("salmon", (214, 164, 148), (146, 138, 130), 232, 0),
+    ("white", (240, 240, 236), (158, 156, 152), 228, 0),
+    ("dark brick", (112, 62, 54), (92, 90, 88), 238, 0),
+]
+
+# Hip roofs (Buildings.FirstHipVariant on): ridge inset from each end as a share of the ridge-axis length, for
+# footprints of increasing squareness. Variant = first + shape * 3 + roof colour.
+HIP_INSETS = (0.20, 0.33, 0.50)
 
 TEX_W, TEX_H = 128, 64
 
@@ -355,6 +373,45 @@ def gable():
     return positions, normals, uvs, indices
 
 
+def hip(inset):
+    """Hipped roof over the unit footprint, same frame and texture layout as gable(): ridge along y at x = 1, eaves at
+    z = +-0.5. The ridge stops `inset` short of each end (0.5 = pyramid); the four slopes all use the roof half of
+    the texture, courses running from ridge to eave."""
+    m = 0.03
+    r = 0.5 - inset
+    faces = []
+    for sign in (1, -1):
+        quad = [(0, -.5, .5 * sign), (0, .5, .5 * sign), (1, r, 0), (1, -r, 0)]
+        faces.append(quad if r > 1e-6 else [quad[0], quad[1], quad[2]])
+    for sign in (1, -1):
+        faces.append([(0, .5 * sign, -.5), (0, .5 * sign, .5), (1, r * sign, 0)])
+
+    positions, normals, uvs, indices = [], [], [], []
+    for poly in faces:
+        a, b, c = poly[0], poly[1], poly[2]
+        u = [b[k] - a[k] for k in range(3)]
+        v = [c[k] - a[k] for k in range(3)]
+        n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+        centre = [sum(p[k] for p in poly) / len(poly) for k in range(3)]
+        flip = sum(n[k] * (centre[k] - (0.3 if k == 0 else 0)) for k in range(3)) < 0
+        if flip:
+            n = [-n[k] for k in range(3)]
+        length = sum(n[k] * n[k] for k in range(3)) ** 0.5
+        n = tuple(n[k] / length for k in range(3))
+        base = len(positions)
+        for p in poly:
+            positions.append(p)
+            normals.append(n)
+            # Along the eave for the long slopes, across for the ends; v from ridge (1 - x) to eave.
+            long_slope = abs(poly[0][2] - poly[1][2]) < 1e-9      # eave along y; the end slopes have theirs along z
+            u_coord = (p[1] + .5) if long_slope else (p[2] + .5)
+            uvs.append((0.5 + m + (0.5 - 2 * m) * u_coord, m + (1 - 2 * m) * (1 - p[0])))
+        for k in range(1, len(poly) - 1):
+            tri = (0, k + 1, k) if flip else (0, k, k + 1)
+            indices.extend(base + i for i in tri)
+    return positions, normals, uvs, indices
+
+
 def unit_box(up_normals=False, top=(0.53, 0.97), side=(0.03, 0.47), across=(0.03, 0.97)):
     """Box with x in [0, 1] (up) and y, z in [-0.5, 0.5]; no bottom face. Facade uses u in [0, 0.5], roof u in [0.5, 1]
     (top, side: the u ranges; across: the top face's v range).
@@ -480,6 +537,8 @@ def main():
                ("GEE_HTank", structure_assets.horizontal_tank()), ("GEE_Tent", structure_assets.tent()),
                ("GEE_CrewArm", structure_assets.crew_arm()),
                ("GEE_ScannedSlab", unit_box(up_normals=True, **scan_uv()))]
+              + [(f"GEE_Hip{k}", hip(inset)) for k, inset in enumerate(HIP_INSETS)]
+              + [("GEE_Dormer", house_assets.dormer()), ("GEE_Barge", house_assets.barge())]
               + landmark_assets.meshes() + furniture_assets.meshes())
     write_flat_normal_bc5(os.path.join(MOD_DIR, "Textures", "GEE_Normal.ktx2"))
 
@@ -502,6 +561,7 @@ def main():
     i = len(textures) + sum(line.strip().startswith("<StaticObject ") for line in landmarks)
     # Then the gabled roofs and the airfield surfaces (Buildings.FirstRoofVariant, RunwayVariant, TaxiwayVariant
     # and ApronVariant in C#).
+    roof_first = i
     for k, (name, tile, wall) in enumerate(ROOFS):
         xml += ktx_material(i, f"roof {name}", facade_assets.gable_roof(tile, wall, k), gable_mesh)
         i += 1
@@ -548,12 +608,32 @@ def main():
     # White paint slab for junction markings (Buildings.JunctionPaintVariant), before the furniture.
     xml += ktx_material(i, "junction paint", road_profile_images("paint"), "GEE_ScannedSlab")
     i += 1
-    # Roadside furniture (Buildings.FurnitureVariant: lamp, sign, gantry), after the gore variant.
+    # Hip roofs (Buildings.FirstHipVariant): shape-major, roof colour-minor, with their own copies of the gable roofs' textures (sharing files broke the game's texture binding).
+    for shape in range(len(HIP_INSETS)):
+        for k, (name, _, _) in enumerate(ROOFS):
+            tile, wall = ROOFS[k][1], ROOFS[k][2]
+            xml += ktx_material(i, f"hip {shape} {name}", facade_assets.gable_roof(tile, wall, k), f"GEE_Hip{shape}")
+            i += 1
+    # More facade colours (Buildings.ExtraFacades), before the furniture.
+    for k, (name, facade, roof, rough, metal) in enumerate(EXTRA_FACADES):
+        xml += ktx_material(i, name, facade_assets.facade(name, facade, roof, rough, metal, len(VARIANTS) + k), box_mesh)
+        i += 1
+    # House relief (Buildings.TrimVariant ... FirstGarageVariant, HouseDetail.cs), before the furniture: trim box,
+    # bargeboard, dormer bodies, front doors, garage doors; own texture files each (house_assets.py).
+    house = [("trim", house_assets.trim(0), box_mesh), ("barge", house_assets.trim(1), "GEE_Barge")]
+    house += [(f"dormer {w[0]}", house_assets.dormer_images(k), "GEE_Dormer") for k, w in enumerate(house_assets.DORMER_WALLS)]
+    house += [(f"door {d[0]}", house_assets.door_images(k), box_mesh) for k, d in enumerate(house_assets.DOOR_LEAVES)]
+    house += [(f"garage {g[0]}", house_assets.garage_images(k), box_mesh) for k, g in enumerate(house_assets.GARAGE_BODIES)]
+    for name, images, mesh in house:
+        xml += ktx_material(i, name, images, mesh)
+        i += 1
+    # Roadside furniture (Buildings.FurnitureVariant: lamp, sign, gantry), after the extra facades.
     xml += furniture_assets.write(MOD_DIR, i, landmark_assets.write_ktx2)
     i += len(furniture_assets.MODELS)
     xml.append("</Assets>")
     with open(os.path.join(MOD_DIR, "Assets.xml"), "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(xml) + "\n")
+        import port_xml  # KSA 2026.11.10 asset format
+        f.write(port_xml.convert_text("\n".join(xml) + "\n"))
     print(f"wrote assets for {i} variants to {MOD_DIR}")
 
 
@@ -567,12 +647,15 @@ def ktx_material(i, name, images, mesh):
     return [line.replace("_Diffuse.png", "_Diffuse.ktx2").replace("_PBR.png", "_PBR.ktx2") for line in material_xml(i, name, mesh)]
 
 
-def material_xml(i, name, mesh):
+def material_xml(i, name, mesh, texture_index=None):
+    """Material and static object of variant i; texture_index reuses another variant's KTX2 textures (hip roofs)."""
+    t = i if texture_index is None else texture_index
+    ext = "png" if texture_index is None else "ktx2"
     return [f'  <!-- variant {i}: {name} -->',
             f'  <PbrMaterial Id="GEE_V{i}_Material">',
-            f'    <Diffuse Path="Textures/GEE_V{i}_Diffuse.png" Category="Vessel" />',
+            f'    <Diffuse Path="Textures/GEE_V{t}_Diffuse.{ext}" Category="Vessel" />',
             '    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />',
-            f'    <AoRoughMetal Path="Textures/GEE_V{i}_PBR.png" Category="Vessel" />',
+            f'    <AoRoughMetal Path="Textures/GEE_V{t}_PBR.{ext}" Category="Vessel" />',
             '  </PbrMaterial>',
             f'  <StaticObject Id="GEE_Box{i}">',
             f'    <PartModel Id="GEE_Box{i}_Model">',

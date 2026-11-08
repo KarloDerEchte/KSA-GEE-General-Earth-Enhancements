@@ -137,7 +137,7 @@ public static class Landmarks
     /// </summary>
     private static void InCompound(RawBuilding building, string? colour, OsmOptions options)
     {
-        if (building.Variant >= Buildings.RoadVariant)
+        if (!Buildings.IsFacade(building.Variant))
             return;
         double k = Math.PI / 180 * options.PlanetRadius;
         foreach (var (lat, lon, radius) in Compounds)
@@ -150,6 +150,8 @@ public static class Landmarks
             {
                 building.Height += building.RoofHeight;
                 building.RoofHeight = 0;
+                building.RoofPitch = 0;
+                building.RoofHip = false;
             }
             double area = building.Boxes.Sum(b => b.LengthA * b.LengthB);
             uint h = (uint)(building.Id ^ (building.Id >> 32));

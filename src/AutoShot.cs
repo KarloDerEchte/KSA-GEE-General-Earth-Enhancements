@@ -1,3 +1,4 @@
+using Brutal.GlfwApi;
 using Brutal.Numerics;
 using KSA;
 
@@ -24,6 +25,10 @@ namespace GEE;
 ///   record NAME N [S]     N screenshots NAME_001.. with S seconds between them (a "video" as frames)
 ///   clouds off|on         hide/show volumetric clouds and cloud shadows (sets GameSettings.Current.Graphics
 ///                         Clouds/CloudShadows; stays until changed or the game restarts)
+///   ascend LAT LON FROM_ALT TO_ALT SECONDS   scripted climb of the free camera (metres, exponential), eastward ground track
+///   spawn ROCKET [BODY LOCATION]   spawn a saved rocket (RocketSpawnApi), then `control ID` / `follow ID`
+///   vinput ACTION [press|release|tap]   key action for the controlled vehicle (MainEngineStartup, MainEngineThrottleUp, CameraUp = stage, Forward/Backward = pitch)
+///   profile start [NAME] | stop   flight profiler (FlightProfiler.cs): record fps per altitude, write profiles/flight_*.txt/.csv
 ///   quit                  write shots/results.json and shots/DONE (shot count, timestamp), then Environment.Exit(0)
 /// If the first line of the script is "#autoquit", quit runs by itself when the script ends (also after an error).
 /// shot NAME also writes shots/NAME.jpg (1280 px wide, quality 88) next to the full PNG.
@@ -32,7 +37,11 @@ namespace GEE;
 /// </summary>
 internal static class AutoShot
 {
-    private enum Step { Next, Wait, Sun, ShotWait, Idle, LogWait }
+    private enum Step { Next, Wait, Sun, ShotWait, Idle, LogWait, Ascend }
+
+    // ascend: LAT LON FROM_ALT TO_ALT SECONDS
+    private static double[] _ascend = new double[5];
+    private static double _ascendT;
 
     private static string[]? _lines;
     private static int _next;
@@ -233,6 +242,22 @@ internal static class AutoShot
     {
         switch (_step)
         {
+            case Step.Ascend:
+            {
+                // Scripted ascent for fps tests: altitude grows exponentially from FROM to TO, the ground track runs east
+                // (about 1.2 m downrange per metre of altitude up to 150 km, then orbital speed), the camera looks ahead and down.
+                _ascendT += dt;
+                double u = Math.Clamp(_ascendT / _ascend[4], 0, 1);
+                double alt = _ascend[2] * Math.Pow(_ascend[3] / _ascend[2], u);
+                double down = alt < 150_000 ? 1.2 * alt : 180_000 + (alt - 150_000) * 30;
+                double lat = _ascend[0], lon = _ascend[1] + down / (6_371_000 * Math.Cos(lat * Math.PI / 180)) * 180 / Math.PI;
+                double ahead = (down + Math.Max(3000, alt * 3)) / (6_371_000 * Math.Cos(lat * Math.PI / 180)) * 180 / Math.PI;
+                _view = FormattableString.Invariant($"{lat} {lon} {alt} {lat} {_ascend[1] + ahead} 0");
+                View(_view, bodyId);
+                if (u >= 1)
+                    _step = Step.Next;
+                return;
+            }
             case Step.Wait:
                 if ((_timer -= dt) <= 0)
                     _step = Step.Next;
@@ -403,6 +428,20 @@ internal static class AutoShot
                     _view = argument;
                     View(argument, bodyId);
                     break;
+                case "spawn":
+                    Spawn(argument);
+                    break;
+                case "vinput":
+                    VehicleInput(argument);
+                    break;
+                case "ascend":
+                    _ascend = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(x => double.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+                    _ascendT = 0;
+                    _step = Step.Ascend;
+                    break;
+                case "profile":
+                    GeeMod.Instance?.ProfileCommand(argument);
+                    break;
                 case "log":
                     Log.Info($"autoshot: {argument}");
                     break;
@@ -422,6 +461,45 @@ internal static class AutoShot
     /// view LAT LON ALT TLAT TLON TALT: puts the (free) camera at a place ALT metres above the ground and turns it
     /// to the target point, with the local vertical up.
     /// </summary>
+    /// <summary>spawn ROCKET [BODY LOCATION]: spawns a saved rocket through the RocketSpawnApi mod (http://127.0.0.1:4260).</summary>
+    private static void Spawn(string argument)
+    {
+        string[] w = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        string url = "http://127.0.0.1:4260/v1/spawn?rocket=" + Uri.EscapeDataString(w[0]);
+        if (w.Length > 2)
+            url += "&body=" + Uri.EscapeDataString(w[1]) + "&location=" + Uri.EscapeDataString(w[2]);
+        Log.Info($"autoshot: spawn {url}");
+        var curl = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("curl.exe", $"-s -m 60 \"{url}\"") { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true });
+        if (curl != null)
+            Task.Run(() =>
+            {
+                string answer = curl.StandardOutput.ReadToEnd().Replace('\n', ' ') + curl.StandardError.ReadToEnd();
+                curl.WaitForExit(65000);
+                Log.Notice($"AutoShot: spawn {w[0]} answered: {answer} (curl exit {(curl.HasExited ? curl.ExitCode : -1)})");
+            });
+    }
+
+    /// <summary>vinput ACTION [press|release|tap]: sends a key action (MainEngineStartup, MainEngineThrottleUp, CameraUp = stage, Forward = pitch ...) to the controlled vehicle.</summary>
+    private static void VehicleInput(string argument)
+    {
+        string[] w = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (Program.ControlledVehicle is not { } vehicle || !Enum.TryParse(w[0], true, out InputAction action))
+        {
+            Log.Error($"autoshot: vinput {argument}: no controlled vehicle or unknown action");
+            return;
+        }
+        string mode = w.Length > 1 ? w[1].ToLowerInvariant() : "tap";
+        void Send(GlfwKeyAction keyAction) => InputEvents.VehicleInputBuffer.Add(new InputEvents.VehicleInputData
+        {
+            Vehicle = vehicle, Action = action, KeyAction = keyAction, Modifiers = 0
+        });
+        if (mode != "release")
+            Send(GlfwKeyAction.Press);
+        if (mode != "press")
+            Send(GlfwKeyAction.Release);
+        Log.Info($"autoshot: vinput {action} {mode} on {vehicle.Id}");
+    }
+
     private static bool _cloudsSaved;
     private static GameSettings.CloudShadows _savedShadows;
 

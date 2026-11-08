@@ -562,7 +562,8 @@ def main():
                 assert line.split('"')[1] in names, line
     T.write_glb(os.path.join(MOD_DIR, "Meshes", f"{PREFIX}.glb"), meshes)
     with open(os.path.join(MOD_DIR, "Scatter.xml"), "w", encoding="utf-8", newline="\n") as f:
-        f.write("\n".join(xml) + "\n")
+        import port_xml  # KSA 2026.11.10 asset format
+        f.write(port_xml.convert_text("\n".join(xml) + "\n"))
     print(f"wrote Scatter.xml, {len(objects)} clutter objects, {len(meshes)} meshes")
     return 0
 

@@ -1,0 +1,15 @@
+# Scripted ascent from the pad to orbit altitude with the flight profiler: free camera climbs 30 m -> 400 km in 180 s
+# (exponential, ground track east). Report: profiles/flight_*_ascent.txt; read the slow phases at the end.
+load Launch_A
+waitidle 60
+clouds off
+sunel 35
+waitidle 40
+camera Free
+follow Earth
+view 28.5 -80.6 30 28.5 -80.0 0
+waitidle 60
+profile start ascent
+ascend 28.5 -80.6 30 400000 180
+profile stop
+log ascent done

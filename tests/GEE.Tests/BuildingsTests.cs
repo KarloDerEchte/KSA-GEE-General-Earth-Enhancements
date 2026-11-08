@@ -122,10 +122,51 @@ public class BuildingsTests
     {
         var b = Buildings.FromRing(11, RectRing(12, 9), 7, 0, "#decdd0", Options)!;   // plaster, a roof colour variant
         Assert.True(b.RoofHeight > 0);
-        double minPitch = Math.Tan(28 * Math.PI / 180) * 9 / 2, maxPitch = Math.Tan(42 * Math.PI / 180) * 9 / 2;
+        var eu = RegionStyles.StyleOf(Region.Europe);   // the test site is Berlin
+        double minPitch = Math.Tan(eu.HousePitchMin * Math.PI / 180) * 9 / 2, maxPitch = Math.Tan(eu.HousePitchMax * Math.PI / 180) * 9 / 2;
         Assert.InRange(b.RoofHeight, minPitch - 0.1, maxPitch + 0.1);
         Assert.InRange(b.RoofVariant, Buildings.FirstRoofVariant, Buildings.FirstRoofVariant + Buildings.RoofVariants - 1);
         Assert.True(b.Height >= 2.6 && b.Height < 7, "the roof takes from the wall height");
+    }
+
+    [Fact]
+    public void FromRing_Pitch_IsSharedByEveryBox_AndRiseFollowsTheShortSide()
+    {
+        // L-shaped house: two boxes, the roof of each as high as its own width allows at one pitch.
+        var ring = new List<(double Lat, double Lon)>();
+        double k = Math.PI / 180 * 6371000;
+        foreach (var (e, n) in new[] { (0.0, 0.0), (14.0, 0), (14, 6), (6, 6), (6, 12), (0, 12) })
+            ring.Add((n / k, e / k));
+        var b = Buildings.FromRing(21, ring, 6, 0, "#decdd0", Options)!;
+        Assert.True(b.Boxes.Count >= 2);
+        var eu = RegionStyles.StyleOf(Region.Europe);
+        Assert.InRange(b.RoofPitch, eu.HousePitchMin * Math.PI / 180 - 1e-9, eu.HousePitchMax * Math.PI / 180 + 1e-9);
+        double narrow = Buildings.RoofRise(6, b), wide = Buildings.RoofRise(12, b);
+        Assert.Equal(2 * narrow, wide, 6);
+    }
+
+    [Fact]
+    public void FromRing_LowBlocks_GetAShallowRoof_ForMostOfThemInEurope()
+    {
+        int roofed = 0, n = 400;
+        for (int i = 0; i < n; i++)
+        {
+            var b = Buildings.FromRing(1000 + i, RectRing(30, 16), 11, 0, "#decdd0", Options)!;
+            if (b.RoofPitch > 0)
+            {
+                roofed++;
+                Assert.InRange(b.RoofPitch, 20 * Math.PI / 180 - 1e-9, 32 * Math.PI / 180 + 1e-9);   // Europe block pitch
+                Assert.True(b.RoofHeight <= 5 + 1e-9);
+            }
+        }
+        Assert.InRange(roofed, n * 0.7, n * 0.9);   // Europe: 80 %
+    }
+
+    [Fact]
+    public void FromRing_ConcreteAndGlassFacades_StayFlat()
+    {
+        foreach (string colour in new[] { "#b2b0aa", "#5f6268", "#6e87a0" })
+            Assert.Equal(0, Buildings.FromRing(5, RectRing(12, 9), 7, 0, colour, Options)!.RoofHeight);
     }
 
     [Fact]
@@ -137,7 +178,7 @@ public class BuildingsTests
     }
 
     [Theory]
-    [InlineData("#ffffff", 1)]
+    [InlineData("#ffffff", 6 + 0)]   // replaced below: the extra white facade
     [InlineData("#f00", 3)]
     [InlineData("red", 3)]
     [InlineData("#b2b0aa", 0)]
@@ -146,6 +187,9 @@ public class BuildingsTests
     [InlineData("black", 4)]
     public void Colour_PicksTheNearestFacadeVariant(string colour, int expected)
     {
+        // "#ffffff" is nearest to the extra white facade (the first row stands for it).
+        if (colour == "#ffffff")
+            expected = Buildings.FirstExtraFacade + 6;
         Assert.Equal(expected, Buildings.Variant(1, colour, 10, 100));
     }
 
@@ -155,12 +199,15 @@ public class BuildingsTests
         for (long seed = 0; seed < 500; seed++)
         {
             Assert.Equal(Buildings.Variant(seed, null, 50, 100), Buildings.Variant(seed, null, 50, 100));
-            Assert.Contains(Buildings.Variant(seed, null, 50, 100), new[] { 0, 4, 5, 1 });           // towers
-            Assert.Contains(Buildings.Variant(seed, null, 8, 3000), new[] { 6, 0, 4 });                // halls
-            Assert.Contains(Buildings.Variant(seed, null, 8, 100), new[] { 1, 2, 3, 7, 0 });           // houses
+            int tower = Buildings.Variant(seed, null, 50, 100), hall = Buildings.Variant(seed, null, 8, 3000), house = Buildings.Variant(seed, null, 8, 100);
+            Assert.True(tower is 0 or 4 or 5 or 1 || Buildings.IsFacade(tower) && tower >= Buildings.FirstExtraFacade);    // towers
+            Assert.True(hall is 6 or 0 or 4 || Buildings.IsFacade(hall) && hall >= Buildings.FirstExtraFacade);            // halls
+            Assert.True(house is 1 or 2 or 3 or 7 or 0 || Buildings.IsFacade(house) && house >= Buildings.FirstExtraFacade); // houses
         }
-        // all choices are actually used
-        Assert.Equal(5, Enumerable.Range(0, 500).Select(i => Buildings.Variant(i, null, 8, 100)).Distinct().Count());
+        // all choices are actually used: the five plain colours and the painted ones
+        var houses = Enumerable.Range(0, 2000).Select(i => Buildings.Variant(i, null, 8, 100)).Distinct().ToList();
+        Assert.Equal(5 + Buildings.ExtraFacades.Length, houses.Count);
+        Assert.All(houses, v => Assert.True(Buildings.IsFacade(v)));
     }
 
     [Fact]
@@ -172,7 +219,7 @@ public class BuildingsTests
             Buildings.ApronVariant, Buildings.TankVariant, Buildings.TankCapVariant, Buildings.HorizontalTankVariant, Buildings.TentVariant,
             Buildings.MetalRoofVariant, Buildings.CrewArmVariant, Buildings.RoadPlainVariant, Buildings.HighwayVariant, Buildings.StreetVariant,
             Buildings.RampVariant, Buildings.TrackVariant, Buildings.Highway3Variant, Buildings.Highway4Variant, Buildings.GoreVariant,
-            Buildings.JunctionPaintVariant, Buildings.FurnitureVariant,
+            Buildings.JunctionPaintVariant, Buildings.FirstHipVariant, Buildings.FirstExtraFacade, Buildings.FurnitureVariant,
         };
         Assert.All(ids, id => Assert.InRange(id, 0, Buildings.VariantCount - 1));
         Assert.Equal(ids.Length, ids.Distinct().Count());

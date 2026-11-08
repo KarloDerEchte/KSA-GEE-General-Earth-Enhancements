@@ -17,6 +17,8 @@ internal static class Perf
     private static double _lastReport;
     private static int _frames;
     public static string Summary = "";
+    /// <summary>Section ticks of the frame that just ended (read by FlightProfiler).</summary>
+    public static readonly Dictionary<string, long> LastFrameTicks = new();
 
     public static Scope Measure(string name) => new(name, Stopwatch.GetTimestamp());
 
@@ -43,6 +45,9 @@ internal static class Perf
                 frameSum += kv.Value;
         }
         _worstFrame = Math.Max(_worstFrame, frameSum);
+        LastFrameTicks.Clear();
+        foreach (var kv in FrameTicks)
+            LastFrameTicks[kv.Key] = kv.Value;
         FrameTicks.Clear();
         double now = Clock.Elapsed.TotalSeconds;
         if (now - _lastReport < 10 || _frames == 0)

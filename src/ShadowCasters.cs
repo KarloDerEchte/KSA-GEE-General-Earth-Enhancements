@@ -77,6 +77,8 @@ internal static class ShadowCasters
         var kinds = new byte[Buildings.VariantCount];
         for (int v = 0; v < 8; v++)
             kinds[v] = Box;
+        for (int v = 0; v < Buildings.ExtraFacades.Length; v++)
+            kinds[Buildings.FirstExtraFacade + v] = Box;
         for (int i = 0; i < Landmarks.All.Length; i++)
         {
             string name = Landmarks.All[i].Name;
@@ -86,6 +88,9 @@ internal static class ShadowCasters
         }
         for (int r = 0; r < Buildings.RoofVariants; r++)
             kinds[Buildings.FirstRoofVariant + r] = Gable;
+        // Hip roofs cast the gable's shadow (a little too much at the hipped ends).
+        for (int h = 0; h < Buildings.HipShapes * Buildings.RoofVariants; h++)
+            kinds[Buildings.FirstHipVariant + h] = Gable;
         kinds[Buildings.MetalRoofVariant] = Gable;
         kinds[Buildings.TankVariant] = Cylinder;
         kinds[Buildings.TankCapVariant] = Dome;

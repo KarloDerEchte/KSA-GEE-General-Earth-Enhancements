@@ -1,0 +1,28 @@
+# Real test flight with the saved rocket LATEST (the game's own save of the old pad vehicle is broken on KSA 5801):
+# spawn it at the home pad, light the engines, hold full throttle, stage, record fps until ~4 minutes after liftoff.
+load Launch_A
+waitidle 60
+clouds off
+sunel 35
+waitidle 40
+spawn LATEST
+wait 10
+control LATEST
+follow LATEST
+wait 5
+waitidle 60
+shot flight_pad
+profile start flight
+vinput ToggleStabilization tap
+vinput MainEngineStartup tap
+vinput MainEngineThrottleUp press
+wait 6
+vinput MainEngineThrottleUp release
+vinput CameraUp tap
+wait 60
+shot flight_60s
+wait 120
+shot flight_180s
+wait 120
+profile stop
+shot flight_end

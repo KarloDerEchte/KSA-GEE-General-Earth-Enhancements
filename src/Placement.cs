@@ -95,7 +95,7 @@ public static class Placement
             Base = up * (radius + baseHeight),
             Center = up * (radius + hCenter),
             Variant = b.Variant,
-            Style = b.Variant < Buildings.RoadVariant ? b.Style : Buildings.StyleNone,
+            Style = Buildings.IsFacade(b.Variant) ? b.Style : Buildings.StyleNone,
             Seed = LightSet.Hash(b.Id, (long)(b.Lat * 1e6), (long)(b.Lon * 1e6)),
             GroundOffset = (float)(ground - baseHeight),
         };
@@ -121,7 +121,10 @@ public static class Placement
     /// Gabled roof on a wall box, ridge along its longer side, with a little overhang. Swapping the axes
     /// for the ridge turns them by 90 degrees, so the mesh keeps its handedness.
     /// </summary>
-    public static BuildingInstance MakeRoof(in BuildingInstance wall, RawBuilding b)
+    public static BuildingInstance MakeRoof(in BuildingInstance wall, RawBuilding b) => MakeRoof(wall, b, b.RoofHeight);
+
+    /// <summary>MakeRoof with the rise of this box's roof (boxes of one building differ in size, pitch is shared).</summary>
+    public static BuildingInstance MakeRoof(in BuildingInstance wall, RawBuilding b, double rise)
     {
         double3 up = double3.Normalize(wall.Up);
         double lengthA = Length(wall.AxisA), lengthB = Length(wall.AxisB);
@@ -131,15 +134,28 @@ public static class Placement
         double ridgeLength = Math.Max(lengthA, lengthB), acrossLength = Math.Min(lengthA, lengthB);
         return new BuildingInstance
         {
-            Up = up * b.RoofHeight,
+            Up = up * rise,
             AxisA = ridge * ((ridgeLength + 0.6) / ridgeLength),
             AxisB = across * ((acrossLength + 0.8) / acrossLength),
             // Slightly sunk into the wall top, which it hides.
             Base = wall.Base + wall.Up - up * 0.02,
             Center = wall.Center,
-            Variant = b.RoofVariant,
+            Variant = b.RoofHip ? HipVariant(b.RoofVariant, acrossLength / ridgeLength) : b.RoofVariant,
             Style = Buildings.StyleNone,
         };
+    }
+
+    /// <summary>Hip roof of the gable roof variant's colour, with the ridge inset that fits a footprint of this short/long ratio.</summary>
+    public static int HipVariant(int gableVariant, double aspect)
+    {
+        if (gableVariant < Buildings.FirstRoofVariant || gableVariant >= Buildings.FirstRoofVariant + Buildings.RoofVariants)
+            return gableVariant;
+        // The exact inset is aspect / 2 of the ridge length: take the nearest of the modelled ones.
+        int shape = 0;
+        for (int k = 1; k < Buildings.HipShapes; k++)
+            if (Math.Abs(Buildings.HipInsets[k] - aspect / 2) < Math.Abs(Buildings.HipInsets[shape] - aspect / 2))
+                shape = k;
+        return Buildings.FirstHipVariant + shape * Buildings.RoofVariants + (gableVariant - Buildings.FirstRoofVariant);
     }
 
     /// <summary>

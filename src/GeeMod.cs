@@ -40,6 +40,7 @@ public class GeeMod
     {
         EnsureStarted();
         Perf.Frame();
+        ProfileFrame(dtPlayer);
         AutoShot.Tick(dtPlayer, _dir, _settings.Body, _settings.SunId);
         using (Perf.Measure("satellite upload"))
             SatelliteImagery.Upload();
@@ -89,6 +90,7 @@ public class GeeMod
     [StarMapAfterGui]
     public void OnGui(double dt)
     {
+        FlightProfiler.DrawWindow(_dir);
         if (_manager != null && _settings.ShowWindow)
             DrawWindow();
     }
@@ -96,6 +98,7 @@ public class GeeMod
     [StarMapUnload]
     public void OnUnload()
     {
+        FlightProfiler.Stop(_dir);
         _harmony?.UnpatchAll(_harmony.Id);
         _global?.Dispose();
         _far?.Dispose();
@@ -109,6 +112,22 @@ public class GeeMod
         GlowRenderer.Regional = null;
         GlowRenderer.Global = null;
         Instance = null;
+    }
+
+    private void ProfileFrame(double dtPlayer)
+    {
+        Celestial? body = Universe.CurrentSystem is { } system && system.All.TryGet(_settings.Body, out Astronomical? a) ? a as Celestial : null;
+        FlightProfiler.Frame(dtPlayer, body, Program.GetMainCamera(), Perf.LastFrameTicks);
+    }
+
+    /// <summary>AutoShot "profile start [NAME]" / "profile stop".</summary>
+    internal void ProfileCommand(string argument)
+    {
+        string[] w = argument.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        if (w.Length > 0 && w[0] == "stop")
+            FlightProfiler.Stop(_dir);
+        else
+            FlightProfiler.Start(w.Length > 1 ? w[1].Trim() : "");
     }
 
     /// <summary>Unfinished background jobs of all loaders (0 = idle); read by AutoShot waitidle.</summary>
@@ -154,6 +173,7 @@ public class GeeMod
             LakeOcean.Settings = _settings;
             LakeOcean.Field = _water;
             BuildingRenderer.Settings = _settings;
+            RegionStyles.Enabled = _settings.RegionalStyles;
             BuildingRenderer.Manager = _manager;
             GlowRenderer.Settings = _settings;
             GlowRenderer.Manager = _manager;
@@ -164,11 +184,11 @@ public class GeeMod
             TreePack.Settings = _settings;
             Scatter.Settings = _settings;
             GrassBoost.Settings = _settings;
-            GrassLayer.Settings = _settings;
-            GrassLayer.Manager = _manager;
+            FlightProfiler.Settings = _settings;
             PostFx.Settings = _settings;
             GroundDetail.Settings = _settings;
             RoadWear.Settings = _settings;
+            BuildingTint.Settings = _settings;
             Elevation.Settings = _settings;
             RiverBuilder.Settings = _settings;
             Elevation.ModDir = _dir;
@@ -215,6 +235,7 @@ public class GeeMod
         bool debug = _settings.DebugLogging;
         if (ImGui.MenuItem("Debug", default(ImString), ref debug))
             SetDebug(debug);
+        ImGui.MenuItem("Flight profiler", default(ImString), ref FlightProfiler.ShowWindow);
         ImGui.EndMenu();
     }
 
@@ -458,6 +479,14 @@ public class GeeMod
                 Changed();
                 manager.Clear();
             }
+            bool regionalStyles = _settings.RegionalStyles;
+            if (ImGui.Checkbox("Regional architecture", ref regionalStyles))
+            {
+                _settings.RegionalStyles = regionalStyles;
+                RegionStyles.Enabled = regionalStyles;
+                Changed();
+                manager.Clear();
+            }
             bool junctionFillets = _settings.JunctionFillets;
             if (ImGui.Checkbox("Rounded curbs at junctions", ref junctionFillets))
             {
@@ -479,31 +508,18 @@ public class GeeMod
                 Changed();
                 manager.Clear();
             }
+            bool towerMassing = _settings.TowerMassing;
+            if (ImGui.Checkbox("Tower massing (podium, setbacks, crown, antenna)", ref towerMassing))
+            {
+                _settings.TowerMassing = towerMassing;
+                Changed();
+                manager.Clear();
+            }
             bool details = _settings.BuildingDetails;
             if (ImGui.Checkbox("Building details nearby (doors, cornices, roof units)", ref details))
             {
                 _settings.BuildingDetails = details;
                 Changed();
-            }
-            bool grassLayer = _settings.GrassLayer;
-            if (ImGui.Checkbox("Grass layer (blade clumps around the camera)", ref grassLayer))
-            {
-                _settings.GrassLayer = grassLayer;
-                Changed();
-            }
-            if (_settings.GrassLayer)
-            {
-                float gr = (float)_settings.GrassLayerRadiusM, gdens = (float)_settings.GrassLayerDensity, gh = (float)_settings.GrassLayerHeightM;
-                float gsway = (float)_settings.GrassLayerSway, gtrans = (float)_settings.GrassLayerTranslucency, gslope = (float)_settings.GrassLayerSlopeMaxDeg;
-                if (ImGui.SliderFloat("Grass distance (m)", ref gr, 15f, 100f, "%.0f")) { _settings.GrassLayerRadiusM = gr; Changed(); }
-                if (ImGui.SliderFloat("Grass density", ref gdens, 0.1f, 1f, "%.2f")) { _settings.GrassLayerDensity = gdens; Changed(); }
-                if (ImGui.SliderFloat("Grass height (m)", ref gh, 0.15f, 1.2f, "%.2f")) { _settings.GrassLayerHeightM = gh; Changed(); }
-                if (ImGui.SliderFloat("Grass wind sway", ref gsway, 0f, 2f, "%.2f")) { _settings.GrassLayerSway = gsway; Changed(); }
-                if (ImGui.SliderFloat("Grass sun translucency", ref gtrans, 0f, 2f, "%.2f")) { _settings.GrassLayerTranslucency = gtrans; Changed(); }
-                if (ImGui.SliderFloat("Grass steepest slope (deg)", ref gslope, 10f, 60f, "%.0f")) { _settings.GrassLayerSlopeMaxDeg = gslope; Changed(); }
-                bool gcover = _settings.GrassLayerLandCover;
-                if (ImGui.Checkbox("Grass by land cover (ESA WorldCover)", ref gcover)) { _settings.GrassLayerLandCover = gcover; Changed(); }
-                ImGui.Text($"Grass layer: {GrassLayer.LastClumps:N0} clumps drawn; {GrassLayer.Status}");
             }
             bool vapour = _settings.TankVapor;
             if (ImGui.Checkbox("Tank farm vapour", ref vapour))
@@ -530,6 +546,13 @@ public class GeeMod
             {
                 _settings.Windows = windows;
                 Changed();
+            }
+            bool facadeExtras = _settings.FacadeExtras;
+            if (ImGui.Checkbox("Balconies and shop fronts (awnings, signs)", ref facadeExtras))
+            {
+                _settings.FacadeExtras = facadeExtras;
+                Changed();
+                manager.Clear();
             }
             float windowDistance = (float)_settings.WindowDistanceKm;
             if (ImGui.SliderFloat("Window distance (km)", ref windowDistance, 0.5f, 20f, "%.1f"))

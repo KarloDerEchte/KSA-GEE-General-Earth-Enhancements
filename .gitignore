@@ -31,3 +31,7 @@ Thumbs.db
 
 # Release zips
 dist/
+
+# Profiler reports and settings backups
+profiles/
+settings.backup-*.json

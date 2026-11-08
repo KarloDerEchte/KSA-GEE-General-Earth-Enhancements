@@ -41,6 +41,7 @@ internal static class BuildingRenderer
         double3 ry = Double3Ex.Transform(new double3(0, 1, 0), ccf2Cce);
         double3 rz = Double3Ex.Transform(new double3(0, 0, 1), ccf2Cce);
 
+        FacadeRenderer.Extras = settings.FacadeExtras;
         double maxDist = settings.RenderDistanceKm * 1000;
         double maxDist2 = maxDist * maxDist;
         // Roads are thin and numerous, so they get their own, shorter distance; -1 hides them.
@@ -54,7 +55,7 @@ internal static class BuildingRenderer
         double Limit2(in BuildingInstance b) => b.IsRoad ? roadDist2
             : b.IsDetail ? (b.Variant >= Buildings.FurnitureVariant ? furnDist2 : detailDist2) : maxDist2;
         int budget = settings.MaxInstances;
-        int drawn = 0;
+        int drawn = 0, nearDrawn = -1;
 
         float night = settings.NightLights ? NightLights.NightFactor(celestial, camCcf, settings) : 0;
         // Only the nearest lights are used, so candidates come from a small radius.
@@ -205,6 +206,7 @@ internal static class BuildingRenderer
         }
         // Far field beyond the detailed tiles: one box per building, left out where a detailed tile is ready and
         // where it would be smaller than about a pixel.
+        nearDrawn = drawn;
         if (Far is { } far && settings.FarBuildings && showBuildings && far.Snapshot is { Length: > 0 } farTiles)
         {
             NearReady.Clear();
@@ -213,8 +215,29 @@ internal static class BuildingRenderer
                     NearReady.Add(t.Key.X * 16384 + t.Key.Y);
             double farDist = settings.FarRadiusKm * 1000;
             double farDist2 = farDist * farDist;
-            foreach (FarTile ft in farTiles)
+            // The far field cost the most GPU time per pixel shown: looking inland from the pad 70-77k boxes of 1-2 px
+            // took the frame from ~9 to ~32 ms. Far boxes need FarMinPixels, and the far field has a budget of its own:
+            // above it the pixel limit rises (FarLodScale), so distant cities thin out by size. The range is not cut.
+            double farMin = minSize * (FarMinPixels / MinPixels) * (main ? _farLodScale : 1);
+            double farMin2 = farMin * farMin;
+            int farBudget = Math.Min(budget, drawn + FarBudget);
+            int farStart = drawn;
+            // Nearest first, so the budget leaves out the farthest tiles.
+            if (_farKeys.Length < farTiles.Length)
             {
+                _farKeys = new double[farTiles.Length * 2];
+                _farOrder = new FarTile[farTiles.Length * 2];
+            }
+            for (int t = 0; t < farTiles.Length; t++)
+            {
+                double3 fd = farTiles[t].CenterCcf - camCcf;
+                _farKeys[t] = double3.Dot(fd, fd);
+                _farOrder[t] = farTiles[t];
+            }
+            Array.Sort(_farKeys, _farOrder, 0, farTiles.Length);
+            for (int o = 0; o < farTiles.Length; o++)
+            {
+                FarTile ft = _farOrder[o];
                 double3 d = ft.CenterCcf - camCcf;
                 double reach = farDist + ft.RadiusM;
                 if (double3.Dot(d, d) > reach * reach
@@ -228,18 +251,35 @@ internal static class BuildingRenderer
                     double dist2 = double3.Dot(c, c);
                     if (dist2 > farDist2)
                         continue;
-                    if (Size2(in b) < minSize2 * dist2 || NearReady.Contains(ft.NearKeys[i]))
+                    if (Size2(in b) < farMin2 * dist2 || NearReady.Contains(ft.NearKeys[i]))
                         continue;
                     Select(ft.Instances, i, b.Variant, drawn, -1);
-                    if (++drawn >= budget)
-                        goto done;
+                    if (++drawn >= farBudget)
+                        goto farDone;
                 }
+            }
+        farDone:
+            if (main)
+            {
+                int farDrawn = drawn - farStart;
+                if (farDrawn >= FarBudget)
+                    _farLodScale = Math.Min(_farLodScale * 1.08, 16);
+                else if (farDrawn < FarBudget * 0.8)
+                    _farLodScale = Math.Max(_farLodScale / 1.02, 1);
             }
         }
     done:
         selectScope.Dispose();
         using (Perf.Measure("  emit"))
             Emit(drawn, viewport, camCcf, rx, ry, rz, main && settings.BuildingShadows);
+        Viewports++;
+        if (main)
+        {
+            LastNear = nearDrawn < 0 ? drawn : nearDrawn;
+            LastFar = drawn - LastNear;
+        }
+        else
+            LastOther += drawn;
         if (showComplex)
             CrewArm.Render(Models[Buildings.CrewArmVariant]!, viewport, camCcf, rx, ry, rz, maxDist);
         NightLights.Emit(viewport, camCcf, rx, ry, rz, night, settings);
@@ -260,7 +300,20 @@ internal static class BuildingRenderer
     private static double _lodScale = 1;
     public static double LodScale => _lodScale;
 
-    private const double MinPixels = 0.5;
+    // 1 px (was 0.5): boxes under a pixel are a mesh rasterised into a speck, the costliest pixels on the GPU per
+    // pixel shown; in a flight view over a town most of the 60-110k instances were those.
+    private const double MinPixels = 1.0;
+
+    /// <summary>For the flight profiler: main view near-tile and far-field instances of the last frame; Render calls
+    /// (viewports) and instances sent to other viewports since the profiler last read them.</summary>
+    public static int LastNear, LastFar, Viewports, LastOther;
+
+    /// <summary>Far-field boxes need at least this many pixels; at most FarBudget of them per frame (see the far loop).</summary>
+    private const double FarMinPixels = 2.0;
+    private const int FarBudget = 20000;
+    private static double _farLodScale = 1;
+    private static double[] _farKeys = new double[64];
+    private static FarTile[] _farOrder = new FarTile[64];
     private const double VaporReachM = 2500;
     private static readonly List<(Tile Tile, double NearM, int Count)> Candidates = new();
     private const double NearKeepM = 1500;
@@ -374,7 +427,7 @@ internal static class BuildingRenderer
             {
                 ref BuildingInstance b = ref _selArray[j][_selIndex[j]];
                 double pull = b.IsRoad ? Placement.FlatPull(in b, camCcf) : 1;
-                _out[_selSlot[j]] = new StaticObjectModel.PerInstanceData { ModelMatrix = Placement.ModelToEgo(in b, camCcf, rx, ry, rz, pull, b.IsRoad ? RoadWear.Tag(in b) : 0f) };
+                _out[_selSlot[j]] = new StaticObjectModel.PerInstanceData { ModelMatrix = Placement.ModelToEgo(in b, camCcf, rx, ry, rz, pull, b.IsRoad ? RoadWear.Tag(in b) : BuildingTint.Tag(in b)) };
                 int w = _selWallSlot[j];
                 if (w >= 0 && w < wallFits)
                     wallArray[wallStart + w] = FacadeRenderer.Make(in b, camCcf, rx, ry, rz, _selWalls[j]);
@@ -467,7 +520,7 @@ internal static class BuildingRenderer
         for (int v = 0; v < Models.Length; v++)
         {
             string id = $"GEE_Box{v}_Model";
-            Models[v] = all.FirstOrDefault(m => m.Template.Id == id);
+            Models[v] = all.FirstOrDefault(m => m.Template.Key == id);
         }
         _resolvedFrom = all.Count;
         Lists.Clear();

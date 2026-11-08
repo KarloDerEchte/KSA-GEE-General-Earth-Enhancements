@@ -310,7 +310,7 @@ internal sealed class FarField : IDisposable
                 // The zoom 13 layer merges neighbouring buildings and drops heights: estimate from the footprint,
                 // capped for merged blocks.
                 double height = Math.Min(Buildings.EstimateHeight(Math.Min(area, 6000), u), 24);
-                int variant = Buildings.Variant(seed, colour, height, area);
+                int variant = Buildings.Variant(seed, colour, height, area, RegionStyles.At(lat0, lon0, seed));
                 result.Add((lat0, lon0, boxes[0], height, variant, seed));
             }
         });

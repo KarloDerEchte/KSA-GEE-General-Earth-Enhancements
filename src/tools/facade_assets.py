@@ -68,7 +68,7 @@ def facade(name, facade_rgb, roof_rgb, rough, metal, seed):
         face = face * (1.0 + 0.04 * np.sin(x * 140.0 + 0.5 * blotch)[..., None])
     elif name == "metal":
         face = face * (1.0 + 0.05 * np.broadcast_to(streaks(rng, h, 0.6)[None, :], (n, h))[..., None])
-    elif name == "brick":
+    elif name in ("brick", "dark brick"):
         courses = np.sin(y * n * 0.5) * np.sin(x * h * 0.55 + (np.floor(y * n * 0.16) % 2) * 3.14159)
         face = face * (1.0 - 0.07 * np.clip(courses, 0, 1)[..., None])
     face_ao = 255 - 85 * foot ** 1.5 - 30 * np.exp(-((y - 0.04) / 0.03) ** 2)

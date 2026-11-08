@@ -8,7 +8,7 @@ internal static partial class RoadWear
     /// </summary>
     public static float Tag(in BuildingInstance b)
     {
-        if (!Active || !b.IsRoad || b.IsDetail)
+        if (!Active || !Wanted || !b.IsRoad || b.IsDetail)
             return 0;
         int cls = ClassOf(b.Variant);
         unchecked

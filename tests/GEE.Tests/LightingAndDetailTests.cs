@@ -143,3 +143,63 @@ public class BuildingDetailTests
         Assert.Empty(Detail(detail, Raw(16, Buildings.TankVariant)));
     }
 }
+
+public class BalconyDetailTests
+{
+    private static BuildingInstance Wall(double la, double lb, double height, uint id)
+    {
+        var b = new RawBuilding { Id = id, Lat = 40, Lon = -100, Height = height, Variant = 1, Style = Buildings.StyleResidential };
+        return Placement.MakeInstance(b, new Box2(0, 0, 0.3, la, lb), Geo.R, 1, Geo.Flat());
+    }
+
+    private static List<BuildingInstance> Balconies(BuildingInstance wall)
+    {
+        var tile = new Tile();
+        BalconyDetail.Add(tile, wall, new RawBuilding { Id = 3, Lat = 40, Lon = -100, Height = 16, Variant = 1 });
+        return tile.Instances;
+    }
+
+    [Fact]
+    public void SomeTallFlats_GetBalconyPieces_Valid_AndDeterministic()
+    {
+        int with = 0;
+        for (uint id = 1; id <= 40; id++)
+        {
+            var wall = Wall(40, 14, 17, id);
+            var a = Balconies(wall);
+            var b = Balconies(wall);
+            Assert.Equal(a.Count, b.Count);
+            Assert.True(a.Count <= 48 + 3);
+            Assert.True(a.Count % 4 == 0);
+            if (a.Count > 0) with++;
+            foreach (var p in a)
+            {
+                Assert.True(Geo.Finite(p));
+                Assert.True(p.IsDetail);
+                Assert.Equal(Buildings.StyleNone, p.Style);
+                Assert.True(Geo.Dist(p.Base, Geo.Dir(40, -100) * Geo.R) < 100);
+            }
+        }
+        Assert.InRange(with, 5, 40);
+    }
+
+    [Fact]
+    public void LowHousesAndOfficesGetNone()
+    {
+        Assert.Empty(Balconies(Wall(40, 14, 6, 5)));
+        var office = Wall(40, 14, 17, 5);
+        office.Style = Buildings.StyleOffice;
+        Assert.Empty(Balconies(office));
+    }
+
+    [Fact]
+    public void ShaderHashPort_MatchesKnownValues()
+    {
+        // random() must stay in [0,1) and deterministic; the GLSL twin uses the same integer hash.
+        for (uint i = 0; i < 1000; i++)
+            Assert.InRange(BalconyDetail.Random(i, i * 3, 11u), 0f, 0.99999994f);
+        Assert.Equal(BalconyDetail.Random(7, 1, 12), BalconyDetail.Random(7, 1, 12));
+        Assert.Equal(3.3 / 1, BalconyDetail.BayWidth(3.3), 6);
+        Assert.Equal(40.0 / 12, BalconyDetail.BayWidth(40), 6);
+    }
+}

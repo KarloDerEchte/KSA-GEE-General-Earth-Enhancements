@@ -43,11 +43,11 @@ internal static class Scatter
             {
                 if (body.Id != "Earth" || body.BodyTemplate.GroundClutterReference is not { } clutter)
                     continue;
-                foreach (ClutterEcotypeReference ecotype in clutter.Ecotypes.Where(e => e.Name == EcotypeName))
+                foreach (ClutterEcotypeReference ecotype in clutter.Ecotypes.Where(e => e.Key == EcotypeName))
                 {
                     int added = TreePack.AppendObjects(ecotype, Ids());
                     if (added > 0)
-                        Log.Info($"scatter: {added} objects added to ecotype {ecotype.Name} ({ecotype.ClutterObjects.Count} objects)");
+                        Log.Info($"scatter: {added} objects added to ecotype {ecotype.Key} ({ecotype.ClutterObjects.Count} objects)");
                 }
             }
         }

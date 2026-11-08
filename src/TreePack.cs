@@ -54,14 +54,14 @@ internal static class TreePack
         {
             int added = AppendObjects(ecotype, NamesOf(ecotype));
             if (added > 0)
-                Log.Info($"tree pack: {added} trees added to ecotype {ecotype.Name} ({ecotype.ClutterObjects.Count} objects)");
+                Log.Info($"tree pack: {added} trees added to ecotype {ecotype.Key} ({ecotype.ClutterObjects.Count} objects)");
         }
     }
 
     private static IEnumerable<string> NamesOf(ClutterEcotypeReference ecotype)
     {
-        for (int n = 0; ModLibrary.TryGet($"{Prefix}{ecotype.Name}_{n}", out ClutterObjectTemplate? tree) && tree != null; n++)
-            yield return $"{Prefix}{ecotype.Name}_{n}";
+        for (int n = 0; ModLibrary.TryGet($"{Prefix}{ecotype.Key}_{n}", out ClutterObjectTemplate? tree) && tree != null; n++)
+            yield return $"{Prefix}{ecotype.Key}_{n}";
     }
 
     /// <summary>

@@ -196,11 +196,15 @@ internal static class LakeOcean
                 var args = _argBuffer;
                 Array.Copy(__args, args, args.Length);
                 args[3] = clone;
-                args[7] = TessellationNear(__instance, body, active.Levels[k], k);
-                // The game culled the ocean's patches for sea level; the lake's surface is higher, so patches under the camera
-                // that were out of view down there are in view here: draw the whole mesh.
+                // The game culled the ocean's patches for sea level (a compute pass; its index list is still valid here); the
+                // lake's surface is higher, so patches near the camera that were out of view down there can be in view here.
+                // That only matters close to the lake: there the whole mesh is drawn (and tessellated, as the game does near
+                // its sea). Everywhere else the pass reuses the sea's culled patches untessellated. Before, every pass (up to
+                // 12 with river pieces) drew the whole tessellated mesh: 21 ms of a 30 ms frame at the pad (GPU probe).
+                bool near = NearLake(camCcf, body, active, k);
+                args[7] = near && TessellationNear(__instance, body, active.Levels[k], k);
                 bool wasCulling = culling;
-                culling = false;
+                culling = wasCulling && !near;
                 try
                 {
                     _perform!.Invoke(__instance, args);
@@ -217,6 +221,25 @@ internal static class LakeOcean
             Status = $"off: {e.Message}";
             Log.Error($"lakes: drawing the ocean again failed, lakes off: {e}");
         }
+    }
+
+    /// <summary>A pass draws the whole (unculled) ocean mesh only within this distance of its lakes' bounding sphere...</summary>
+    private const double NearLakeMeters = 2500;
+    /// <summary>...and while the camera is at most this high above the lake level (plus 40x the level's height above the sea).</summary>
+    private const double NearLakeHeightMeters = 1500;
+    private static readonly bool[] WasNear = new bool[Passes];
+
+    /// <summary>Is the camera close enough to pass k's lakes for the sea-level culling to cut off visible lake patches? (with hysteresis)</summary>
+    private static bool NearLake(double3 camCcf, Celestial body, Result active, int k)
+    {
+        double level = active.Levels[k];
+        double above = camCcf.Length() - (body.MeanRadius + level);
+        double heightLimit = Math.Max(NearLakeHeightMeters, Math.Max(level - SeaLevelMeters, 0) * 40);
+        double distance = k < active.Centers.Length ? (active.Centers[k] - camCcf).Length() - active.Radii[k] : 0;
+        double grow = WasNear[k] ? 1.2 : 1.0;
+        bool near = above < heightLimit * grow && distance < NearLakeMeters * grow;
+        WasNear[k] = near;
+        return near;
     }
 
     /// <summary>Below this radius / distance (about 2 pixels at 1440p with a 60 degree view) a pass's lakes are not drawn.</summary>
@@ -987,6 +1010,10 @@ internal static class LakeOcean
 
     // ---- map ----
 
+    /// <summary>Smoothed camera speed in m/s (set by Update; also used by the river maps).</summary>
+    public static double CameraSpeed;
+    private static double3 _speedPos;
+    private static double _speedAt = -1;
     private static int _lastTileHash;
     private static double _tileHashAt = -100;
     private static ulong _lastFingerprint;
@@ -1033,8 +1060,21 @@ internal static class LakeOcean
         }
         if (real != null)
             hash = hash * 31 + real.Version;
-        bool moved = !_haveWindow || Math.Sqrt(dLat * dLat + dLon * dLon) > RebuildDistanceM
-            || (hash != _winHash && now - _lastBuildAt > 1.5);
+        // Fast flight and time warp used to rebuild the 2048² maps every few seconds (several Parallel.For passes on the shared
+        // pool = frame hitches): the move threshold grows with altitude and a move rebuilds at most every 6 s.
+        double altitudeM = Math.Max(r - planetR, 0);
+        // Camera speed (m/s), smoothed; the rebuild debounce below depends on it.
+        if (_speedAt > 0 && now > _speedAt)
+        {
+            double step = (cameraCcf - _speedPos).Length() / (now - _speedAt);
+            CameraSpeed += (Math.Min(step, 1e5) - CameraSpeed) * Math.Min((now - _speedAt) / 0.5, 1);
+        }
+        _speedPos = cameraCcf;
+        _speedAt = now;
+        double debounce = CameraSpeed > 300 ? 8 : 1.5;
+        double moveLimit = Math.Clamp(altitudeM * 0.25, RebuildDistanceM, 20000);
+        bool moved = !_haveWindow || (Math.Sqrt(dLat * dLat + dLon * dLon) > moveLimit && now - _lastBuildAt > 6)
+            || (hash != _winHash && now - _lastBuildAt > debounce);
         if (moved && Interlocked.CompareExchange(ref _building, 1, 0) == 0)
         {
             var tiles = field.Snapshot;

@@ -33,6 +33,8 @@ public sealed class Settings
     public int MaxInstances { get; set; } = 150000;
     /// <summary>Gabled roofs on small houses (tiles must be reloaded).</summary>
     public bool Roofs { get; set; } = true;
+    /// <summary>Roof pitch, roof colours and facade palette by region (RegionStyles); off = the same generic look everywhere. Tiles must be reloaded.</summary>
+    public bool RegionalStyles { get; set; } = true;
     /// <summary>Rounded curb corners at road junctions (tiles must be reloaded).</summary>
     public bool JunctionFillets { get; set; } = true;
     /// <summary>Crosswalks and stop lines at junctions in built-up areas (tiles must be reloaded).</summary>
@@ -42,9 +44,15 @@ public sealed class Settings
     /// <summary>Window pattern on facades, lit at night, up to this distance.</summary>
     public bool Windows { get; set; } = true;
     public double WindowDistanceKm { get; set; } = 6;
+    /// <summary>Balconies on flats and shop fronts (awnings, fascia signs) on office walls, painted by the window pass and, nearby, real balcony pieces (needs Windows; tiles must be reloaded for the pieces).</summary>
+    public bool FacadeExtras { get; set; } = true;
     /// <summary>Plinths, entrances, cornices, parapets and roof units on buildings, up to this distance.</summary>
     public bool BuildingDetails { get; set; } = true;
+    /// <summary>Tall buildings (35 m and up) get a podium or setbacks, a penthouse crown and an antenna mast (TowerMassing; tiles must be reloaded).</summary>
+    public bool TowerMassing { get; set; } = true;
     public double DetailDistanceKm { get; set; } = 0.8;
+    /// <summary>Dormers, eave fascia, bargeboards, gable windows, front doors facing the road and garage doors on houses (HouseDetail; tiles must be reloaded). Adds roughly ten relief instances per house.</summary>
+    public bool HouseDetails { get; set; } = true;
     /// <summary>Lamp posts and sign posts/gantries (RoadFurniture) are drawn up to this distance (at least DetailDistanceKm); they are tall, so they stay visible far longer than other relief.</summary>
     public double FurnitureDistanceKm { get; set; } = 3.5;
 
@@ -82,25 +90,10 @@ public sealed class Settings
     /// satellite-tinted terrain (needs GroundColorFromSatellite).
     /// </summary>
     public bool GrassBoost { get; set; } = true;
-    public double GrassRangeMeters { get; set; } = 200;
-    public double GrassDensity { get; set; } = 1.6;
-    public double GrassFarKeep { get; set; } = 0.3;
+    public double GrassRangeMeters { get; set; } = 120;   // was 200: ~5-10x the game's grass, the main GPU cost looking inland near the ground
+    public double GrassDensity { get; set; } = 1.2;
+    public double GrassFarKeep { get; set; } = 0.25;
     public bool GrassSatelliteColor { get; set; } = true;
-    /// <summary>
-    /// Own grass layer (GrassLayer.cs): camera-centred blade clumps out to GrassLayerRadiusM that sway in the wind and
-    /// shine through towards the sun; not on roads, buildings, pads, water, snow or steep slopes. Every setting here
-    /// applies at once. Density is the share of 1 m cells that grow a clump.
-    /// </summary>
-    public bool GrassLayer { get; set; } = true;
-    public double GrassLayerRadiusM { get; set; } = 50;
-    public double GrassLayerDensity { get; set; } = 0.8;
-    public double GrassLayerHeightM { get; set; } = 0.45;
-    public double GrassLayerClumpMeters { get; set; } = 0.55;
-    public double GrassLayerSway { get; set; } = 0.6;
-    public double GrassLayerTranslucency { get; set; } = 0.7;
-    public double GrassLayerSlopeMaxDeg { get; set; } = 38;
-    /// <summary>Colour and density by ESA WorldCover class (downloads blocks as the tree cover does); off: one grass everywhere.</summary>
-    public bool GrassLayerLandCover { get; set; } = true;
     /// <summary>
     /// Colour grade after the game's tonemapper (PostFx.cs; SDR output only, next game start). Contrast 0..1 is the
     /// strength of an S-curve, saturation 1 = unchanged, vibrance lifts dull colours more, warmth -1 (cool) .. 1 (warm),
@@ -113,6 +106,9 @@ public sealed class Settings
     /// </summary>
     public bool RoadWear { get; set; } = true;
     public double RoadWearStrength { get; set; } = 1.0;
+    /// <summary>Per-building facade colour jitter in the static object shader (BuildingTint.cs; next game start). Strength 1 = default.</summary>
+    public bool BuildingTint { get; set; } = true;
+    public double BuildingTintStrength { get; set; } = 1.0;
     public double GradeContrast { get; set; } = 0.25;
     public double GradeSaturation { get; set; } = 1.05;
     public double GradeVibrance { get; set; } = 0.25;

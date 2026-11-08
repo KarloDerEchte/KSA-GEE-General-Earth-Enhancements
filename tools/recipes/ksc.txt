@@ -1,0 +1,14 @@
+# Free-camera check at KSC (works without a vessel): LC-39A from 400 m, Cocoa town from 600 m.
+load Launch_A
+waitidle 60
+clouds off
+sunel 35
+waitidle 40
+camera Free
+follow Earth
+view 28.5575 -80.6040 350 28.6082 -80.6040 0
+waitidle 60
+shot ksc_pad
+view 28.34 -80.76 500 28.38 -80.76 0
+waitidle 60
+shot ksc_cocoa

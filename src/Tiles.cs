@@ -445,6 +445,8 @@ public sealed class TileManager : IDisposable
         tile.BuildingLights = new LightSet(LightKind.Building, tile.CenterCcf, 25);
         tile.LampLights = new LightSet(LightKind.Lamp, tile.CenterCcf, 38);
 
+        // Houses turn their door toward the nearest road of the tile.
+        var roadProximity = _settings.HouseDetails && raw.Roads.Count > 0 ? new RoadProximity(raw.Roads, (s + n) / 2, (w + e) / 2, _planetRadius) : null;
         int total = raw.Buildings.Count + raw.Roads.Count;
         for (int i = 0; i < total; i++)
         {
@@ -485,16 +487,32 @@ public sealed class TileManager : IDisposable
                 BuildingInstance main = default;
                 double mainArea = 0;
                 int first = tile.Count;
-                foreach (var box in boxes)
+                var walls = building.RoofPitch > 0 ? new List<BuildingInstance>(boxes.Count) : null;
+                // Tall buildings are drawn as podium / setbacks / crown / mast parts (TowerMassing); null = plain boxes.
+                var towerParts = TowerMassing.Parts(building, boxes, _settings.TowerMassing && !Landmarks.InAnyCompound(building.Lat, building.Lon));
+                int partCount = towerParts?.Count ?? boxes.Count;
+                for (int pi = 0; pi < partCount; pi++)
                 {
-                    var instance = Placement.MakeInstance(building, box, _planetRadius, _settings.FoundationMeters, terrain);
+                    var box = towerParts != null ? towerParts[pi].Box : boxes[pi];
+                    var part = towerParts != null ? towerParts[pi].Building : building;
+                    var instance = Placement.MakeInstance(part, box, _planetRadius, _settings.FoundationMeters, terrain);
                     if (building.Variant == Buildings.TankVariant || building.Variant == Buildings.HorizontalTankVariant)
                         instance.Vents = Landmarks.InAnyCompound(building.Lat, building.Lon);
                     tile.Add(instance);
-                    BuildingDetail.Add(tile, instance, building);
+                    BuildingDetail.Add(tile, instance, part, _settings.HouseDetails ? new HouseContext(box, roadProximity) : null);
+                    if (_settings.FacadeExtras)
+                        BalconyDetail.Add(tile, instance, part);
+                    walls?.Add(instance);
                     if (building.Variant == Buildings.TankVariant)
                         tile.Add(Placement.MakeDome(instance));
-                    if (box.LengthA * box.LengthB > mainArea)
+                    if (towerParts != null)
+                    {
+                        // The night light sits on the top shaft, sized by the whole footprint.
+                        if (towerParts[pi].IsMain)
+                            main = instance;
+                        mainArea = Math.Max(mainArea, box.LengthA * box.LengthB);
+                    }
+                    else if (box.LengthA * box.LengthB > mainArea)
                     {
                         mainArea = box.LengthA * box.LengthB;
                         main = instance;
@@ -505,7 +523,20 @@ public sealed class TileManager : IDisposable
                 if (Landmarks.IsFixedServiceStructure(building.Id) && mainArea > 0)
                     _crewArms.Enqueue(main);
                 if (building.RoofHeight > 0 && mainArea > 0 && _settings.Roofs)
-                    tile.Add(Placement.MakeRoof(main, building));
+                {
+                    if (walls != null)
+                    {
+                        // Pitched roof on every box of the outline, each as high as its width allows at the shared pitch.
+                        foreach (var wall in walls)
+                        {
+                            double la = Math.Sqrt(double3.Dot(wall.AxisA, wall.AxisA)), lb = Math.Sqrt(double3.Dot(wall.AxisB, wall.AxisB));
+                            if (la * lb >= 12 || walls.Count == 1)
+                                tile.Add(Placement.MakeRoof(wall, building, Buildings.RoofRise(Math.Min(la, lb), building)));
+                        }
+                    }
+                    else
+                        tile.Add(Placement.MakeRoof(main, building));
+                }
                 if (building.LaunchComplex)
                     for (int k = first; k < tile.Count; k++)
                         tile.Instances[k].Layer = Layers.LaunchComplex;

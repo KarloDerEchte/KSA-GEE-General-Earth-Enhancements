@@ -71,8 +71,9 @@ internal static class RiverBuilder
     private static bool Wants(Track track, double lat, double lon, double planetR, int hash, double now, double moveMeters, double debounce)
     {
         double dLat = (lat - track.Lat) * Math.PI / 180 * planetR, dLon = (lon - track.Lon) * Math.PI / 180 * planetR * Math.Cos(lat * Math.PI / 180);
-        bool moved = !track.Have || Math.Sqrt(dLat * dLat + dLon * dLon) > moveMeters;
-        return (moved || (hash != track.Hash && now - track.LastAt > debounce)) && Volatile.Read(ref track.Building) == 0;
+        // At most one move rebuild per 6 s: fast flight and time warp crossed the threshold every few seconds.
+        bool moved = !track.Have || (Math.Sqrt(dLat * dLat + dLon * dLon) > moveMeters && now - track.LastAt > 6);
+        return (moved || (hash != track.Hash && now - track.LastAt > (LakeOcean.CameraSpeed > 300 ? Math.Max(debounce, 8) : debounce))) && Volatile.Read(ref track.Building) == 0;
     }
 
     private static void Start(Track track, double lat, double lon, double planetR, int hash, double now, WaterTile[] tiles, double3 cameraCcf,

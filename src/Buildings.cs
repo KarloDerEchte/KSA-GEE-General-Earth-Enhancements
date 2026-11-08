@@ -19,6 +19,10 @@ public sealed class RawBuilding
     /// <summary>Gabled roof on top of Height, ridge along the longer side; 0 is a flat roof.</summary>
     public double RoofHeight;
     public int RoofVariant;
+    /// <summary>Roof slope in radians (Roof* above): every box of the building gets a roof of its own height at this pitch.</summary>
+    public double RoofPitch;
+    /// <summary>Hipped instead of gabled: the roof shape is picked per box from its proportions (Placement.MakeRoof).</summary>
+    public bool RoofHip;
     /// <summary>Flat ground surface such as an apron, laid on the terrain instead of standing on it.</summary>
     public bool Slab;
     /// <summary>Part of a modelled launch complex (landmark, pipeline, structure from data), not a plain OSM building.</summary>
@@ -89,10 +93,49 @@ public static class Buildings
     public static readonly int GoreVariant = Highway4Variant + 1;
     /// <summary>Solid white paint slab for crosswalk stripes and stop lines (JunctionMarkings), same scan mesh as the roads.</summary>
     public static readonly int JunctionPaintVariant = GoreVariant + 1;
+    /// <summary>
+    /// Hip roofs: HipShapes ridge insets (long to square footprints) x RoofVariants colours, shape-major, sharing the
+    /// gable roofs' textures. Variant = FirstHipVariant + shape * RoofVariants + colour.
+    /// </summary>
+    public static readonly int FirstHipVariant = JunctionPaintVariant + 1;
+    public const int HipShapes = 3;
+    /// <summary>Ridge inset of each hip shape as a share of the ridge length (tools/make_assets.py HIP_INSETS).</summary>
+    public static readonly double[] HipInsets = { 0.20, 0.33, 0.50 };
+    /// <summary>More facade colours, after the hip roofs (tools/make_assets.py EXTRA_FACADES, same order).</summary>
+    public static readonly int FirstExtraFacade = FirstHipVariant + HipShapes * RoofVariants;
+    public static readonly (string Name, int R, int G, int B)[] ExtraFacades =
+    {
+        ("cream", 232, 224, 200),
+        ("pale yellow", 226, 208, 148),
+        ("sage", 174, 188, 166),
+        ("terracotta", 196, 122, 92),
+        ("grey blue", 150, 166, 184),
+        ("salmon", 214, 164, 148),
+        ("white", 240, 240, 236),
+        ("dark brick", 112, 62, 54),
+    };
+    // Indices into ExtraFacades.
+    private const int Cream = 0, PaleYellow = 1, Sage = 2, Terracotta = 3, GreyBlue = 4, Salmon = 5, White = 6, DarkBrick = 7;
+    /// <summary>
+    /// House relief (HouseDetail, tools/house_assets.py), after the extra facades: white trim box, bargeboard mesh,
+    /// dormer bodies with a window, front doors, garage doors. Each has its own textures.
+    /// </summary>
+    public static readonly int TrimVariant = FirstExtraFacade + ExtraFacades.Length;
+    public static readonly int BargeVariant = TrimVariant + 1;
+    public static readonly int FirstDormerVariant = BargeVariant + 1;
+    public const int DormerVariants = 2;
+    public static readonly int FirstDoorVariant = FirstDormerVariant + DormerVariants;
+    public const int DoorVariants = 3;
+    public static readonly int FirstGarageVariant = FirstDoorVariant + DoorVariants;
+    public const int GarageVariants = 2;
     /// <summary>Roadside furniture (RoadFurniture, tools/furniture_assets.py): street lamp, post sign, sign gantry.</summary>
-    public static readonly int FurnitureVariant = JunctionPaintVariant + 1;
+    public static readonly int FurnitureVariant = FirstGarageVariant + GarageVariants;
     public const int FurnitureModels = 3;
     public static readonly int VariantCount = FurnitureVariant + FurnitureModels;
+
+    /// <summary>A building wall material (the first eight colours or one of the extra facades), as opposed to roads, roofs and models.</summary>
+    public static bool IsFacade(int variant) =>
+        variant < RoadVariant || (variant >= FirstExtraFacade && variant < FirstExtraFacade + ExtraFacades.Length);
 
     public static int SurfaceVariant(RoadSurface surface) => surface switch
     {
@@ -159,7 +202,8 @@ public static class Buildings
         if (estimated)
             height = round is { } tank ? Math.Clamp(2.2 * tank.Radius * (0.8 + 0.4 * Unit(seed ^ 0x5bd1e995)), 4, 26)
                 : EstimateHeight(area, Unit(seed ^ 0x5bd1e995));
-        int variant = round != null ? TankVariant : Variant(seed, colour, height, area);
+        var region = RegionStyles.At(lat0, lon0, seed);
+        int variant = round != null ? TankVariant : Variant(seed, colour, height, area, region);
         var building = new RawBuilding
         {
             Id = id,
@@ -172,21 +216,45 @@ public static class Buildings
             Style = round != null ? StyleNone : height > 30 || variant == 5 ? StyleOffice : height < 14 && area > 1500 ? StyleIndustrial : StyleResidential,
         };
 
-        // Houses get a pitched roof of 28-42 degrees over the short side; the walls lose what the roof takes.
-        if (round == null && boxes.Count == 1 && minHeight <= 0 && area is > 30 and < 350 && height <= 13 && variant is 1 or 2 or 3 or 7)
-        {
-            Box2 box = boxes[0];
-            double pitch = (28 + 14 * Unit(seed ^ 0x2545f491)) * Math.PI / 180;
-            double roof = Math.Tan(pitch) * Math.Min(box.LengthA, box.LengthB) / 2;
-            building.RoofHeight = roof;
-            building.Height = Math.Max(building.Height - (estimated ? 0 : roof), 2.6);
-            {
-                double ur = Unit(seed ^ 0x68e31da4); // tile red 15%, slate 45%, brown 40%
-                building.RoofVariant = FirstRoofVariant + (ur < 0.15 ? 0 : ur < 0.60 ? 1 : 2);
-            }
-        }
+        AddPitchedRoof(building, boxes, area, estimated, height, minHeight, variant, round != null, seed, region);
         return building;
     }
+
+    /// <summary>
+    /// Houses (28-42 degrees) and low apartment blocks (12-22 degrees, about half of them) get a gabled or hipped roof
+    /// over every box of their outline; the walls lose what the roof takes. Everything else keeps its flat roof with
+    /// parapet and plant (BuildingDetail).
+    /// </summary>
+    private static void AddPitchedRoof(RawBuilding building, List<Box2> boxes, double area, bool estimated, double height, double minHeight,
+        int variant, bool round, long seed, RegionStyle region)
+    {
+        if (round || minHeight > 0 || boxes.Count > 3 || !PitchedFacade(variant) || height > 16)
+            return;
+        bool house = area > 30 && area < region.HouseMaxArea && height <= 13;
+        bool block = !house && area >= region.HouseMaxArea && area < 900 && Unit(seed ^ 0x1b873593) < region.BlockShare;
+        if (!house && !block)
+            return;
+        // Regions with flat-roofed houses keep a share flat (the default share of 1 draws nothing extra); BlockShare gates blocks (default 0.5 as before).
+        if (house && region.HouseShare < 1 && Unit(seed ^ 0x3c6ef372) >= region.HouseShare)
+            return;
+        double degrees = house ? region.HousePitchMin + (region.HousePitchMax - region.HousePitchMin) * Unit(seed ^ 0x2545f491)
+            : region.BlockPitchMin + (region.BlockPitchMax - region.BlockPitchMin) * Unit(seed ^ 0x2545f491);
+        building.RoofPitch = degrees * Math.PI / 180;
+        building.RoofHip = Unit(seed ^ 0x7f4a7c15) < (house ? region.HouseHip : region.BlockHip);
+        Box2 main = boxes.OrderByDescending(b => b.LengthA * b.LengthB).First();
+        double roof = RoofRise(Math.Min(main.LengthA, main.LengthB), building);
+        building.RoofHeight = roof;
+        building.Height = Math.Max(building.Height - (estimated ? 0 : roof), 2.6);
+        // Generic weights: tile red 15%, slate 45%, brown 40%.
+        building.RoofVariant = FirstRoofVariant + RegionStyles.Pick(region.RoofWeights, Unit(seed ^ 0x68e31da4));
+    }
+
+    /// <summary>Rise of a pitched roof over a box whose shorter side is shortSide, capped for wide blocks.</summary>
+    public static double RoofRise(double shortSide, RawBuilding b) =>
+        b.RoofPitch > 0 ? Math.Min(Math.Tan(b.RoofPitch) * shortSide / 2, 5.0) : b.RoofHeight;
+
+    /// <summary>Facades of buildings that wear a pitched roof: plastered, brick or painted, not concrete, glass, metal or dark cladding.</summary>
+    private static bool PitchedFacade(int variant) => variant is 1 or 2 or 3 or 7 || (variant >= FirstExtraFacade && variant < FirstExtraFacade + ExtraFacades.Length);
 
     /// <summary>
     /// A closed outline that is a circle (tanks, silos, gasometers): at least 10 corners, all about one radius from
@@ -216,25 +284,29 @@ public static class Buildings
         _ => 7.0 + 7.0 * u,        // halls, warehouses, malls
     };
 
-    internal static int Variant(long seed, string? colour, double height, double area)
+    internal static int Variant(long seed, string? colour, double height, double area, RegionStyle? region = null)
     {
         if (ParseColour(colour) is { } c)
         {
             int best = 0;
             double bestDist = double.MaxValue;
-            for (int i = 0; i < Variants.Length; i++)
+            for (int i = 0; i < Variants.Length + ExtraFacades.Length; i++)
             {
-                var v = Variants[i];
+                var v = i < Variants.Length ? Variants[i] : ExtraFacades[i - Variants.Length];
                 double d = Sq(v.R - c.R) + Sq(v.G - c.G) + Sq(v.B - c.B);
                 if (d < bestDist) { bestDist = d; best = i; }
             }
-            return best;
+            return best < Variants.Length ? best : FirstExtraFacade + best - Variants.Length;
         }
 
-        // The tiles carry no building type, so guess from the shape: towers are modern, big low halls industrial.
-        int[] choices = height > 35 ? new[] { 0, 4, 5, 1 }
-            : height < 14 && area > 1500 ? new[] { 6, 0, 4 }
-            : new[] { 1, 2, 3, 7, 0, 0, 1, 2, 0, 3 }; // roofs: terracotta only on ochre (1 in 10)
+        // The tiles carry no building type, so guess from the shape: towers are modern, big low halls industrial,
+        // the rest is plaster and paint in a spread of colours.
+        static int X(int extra) => FirstExtraFacade + extra;
+        if (region?.FacadeWeights is { } weights && height <= 35 && !(height < 14 && area > 1500))
+            return RegionStyles.FacadeVariant(RegionStyles.Pick(weights, Unit(seed)));
+        int[] choices = height > 35 ? new[] { 0, 4, 5, 1, X(White), X(GreyBlue) }
+            : height < 14 && area > 1500 ? new[] { 6, 0, 4, X(White), X(GreyBlue) }
+            : new[] { 1, 2, 3, 7, 0, X(Cream), X(PaleYellow), X(Sage), X(Terracotta), X(GreyBlue), X(Salmon), X(White), X(White), X(DarkBrick), 1, 2, 0, 3 };
         return choices[(int)(Unit(seed) * choices.Length) % choices.Length];
     }
 

@@ -183,7 +183,6 @@ internal static class Patches
                 FacadeRenderer.Draw(commandBuffer, viewport, frameIndex);
             using (Perf.Measure("satellite"))
                 SatelliteImagery.Draw(commandBuffer, viewport, frameIndex);
-            GrassLayer.Draw(commandBuffer, viewport, frameIndex);
             using (Perf.Measure("vapour"))
                 VaporRenderer.Draw(commandBuffer, viewport, frameIndex);
             using (Perf.Measure("glow"))
@@ -204,7 +203,6 @@ internal static class Patches
             FacadeRenderer.RebuildFrameResources();
             ShadowCasters.Dispose();
             VaporRenderer.RebuildFrameResources();
-            GrassLayer.RebuildFrameResources();
             SatelliteImagery.RebuildFrameResources();
             GlowRenderer.RebuildFrameResources();
         }

@@ -69,9 +69,9 @@ internal static class GrassBoost
                     continue;
                 foreach (ClutterEcotypeReference ecotype in clutter.Ecotypes)
                 {
-                    if (ecotype.Name != "Grass")
+                    if (ecotype.Key != "Grass")
                         continue;
-                    string key = $"{body.Id}/{ecotype.Name}";
+                    string key = $"{body.Id}/{ecotype.Key}";
                     // The game's values the first time; running again (renderer rebuilt) must not compound.
                     if (!Originals.TryGetValue(key, out var original))
                         Originals[key] = original = (ecotype.Placement.ObjectSeparation.InMeters(), ecotype.Placement.GenerationRange.InMeters());

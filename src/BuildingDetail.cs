@@ -11,14 +11,14 @@ internal static class BuildingDetail
 {
     private const int Concrete = 0, Brick = 3, Dark = 4, Metal = 6;
 
-    public static void Add(Tile tile, in BuildingInstance wall, RawBuilding building)
+    public static void Add(Tile tile, in BuildingInstance wall, RawBuilding building, HouseContext? houseContext = null)
     {
         if (wall.Variant == Buildings.TankVariant && !wall.IsDetail)
         {
             AddTank(tile, wall);
             return;
         }
-        if (wall.Variant >= Buildings.RoadVariant || wall.IsRoad || wall.IsDetail || building.Slab || building.MinHeight > 0)
+        if (!Buildings.IsFacade(wall.Variant) || wall.IsRoad || wall.IsDetail || building.Slab || building.MinHeight > 0)
             return;
         double3 up = double3.Normalize(wall.Up);
         double la = Length(wall.AxisA), lb = Length(wall.AxisB);
@@ -53,8 +53,13 @@ internal static class BuildingDetail
         // Plinth: a dark concrete step around the foot, about 0.8 m above the ground.
         Piece(Dark, wallBase, la + 0.3, lb + 0.3, up * (groundOffset + 0.8));
 
+        // Houses (pitched roofs): fascia, dormers, gable window, front door facing the road, garage (HouseDetail).
+        bool house = houseContext != null && building.RoofPitch > 0;
+        if (house)
+            AddHouse(tile, wall, building, houseContext!, a, b, la, lb, height);
+
         // Entrance on one of the long sides: door and a canopy over it.
-        if (area >= 60)
+        if (!house && area >= 60)
         {
             bool alongA = la >= lb;
             double sideSign = Rand(1) < 0.5 ? -1 : 1;
@@ -86,7 +91,7 @@ internal static class BuildingDetail
                 bool ridgeAlongA = la >= lb;
                 double along = (Rand(3) < 0.5 ? -1 : 1) * (ridgeAlongA ? la : lb) * 0.25;
                 double3 origin = ridgeAlongA ? At(roof, along, 0, 0) : At(roof, 0, along, 0);
-                Piece(Brick, origin, 0.8, 0.8, up * (building.RoofHeight + 0.9));
+                Piece(Brick, origin, 0.8, 0.8, up * (Buildings.RoofRise(Math.Min(la, lb), building) + 0.9));
             }
             return;
         }
@@ -120,6 +125,56 @@ internal static class BuildingDetail
             }
         }
     }
+
+    /// <summary>Turns the HouseDetail plan of one wall box into instances.</summary>
+    private static void AddHouse(Tile tile, in BuildingInstance wall, RawBuilding building, HouseContext context,
+        double3 a, double3 b, double la, double lb, double height)
+    {
+        var input = new HouseInput
+        {
+            La = la,
+            Lb = lb,
+            WallHeight = height,
+            Rise = Buildings.RoofRise(Math.Min(la, lb), building),
+            Hip = building.RoofHip,
+            RoofVariant = building.RoofVariant,
+            Hash = LightSet.Hash(wall.Seed, 23),
+            SingleBox = building.Boxes.Count == 1,
+            Largest = context.Box.LengthA * context.Box.LengthB >= building.Boxes.Max(x => x.LengthA * x.LengthB) - 1e-9,
+        };
+        if (context.Roads is { } roads)
+        {
+            var (x, y) = roads.ToLocal(building.Lat, building.Lon, context.Box.CenterEast, context.Box.CenterNorth);
+            if (roads.Nearest(x, y, RoadSearchMeters) is { } near)
+            {
+                double dx = near.X - x, dy = near.Y - y, cos = Math.Cos(context.Box.Angle), sin = Math.Sin(context.Box.Angle);
+                input.HasRoad = true;
+                input.RoadA = dx * cos + dy * sin;
+                input.RoadB = -dx * sin + dy * cos;
+            }
+        }
+        double3 up = double3.Normalize(wall.Up);
+        double3 ground = wall.Base + up * wall.GroundOffset, roof = wall.Base + wall.Up;
+        foreach (var p in HouseDetail.Plan(input))
+        {
+            double3 u = a * p.Ux + b * p.Uy;
+            double3 v = a * -p.Uy + b * p.Ux;
+            tile.Add(new BuildingInstance
+            {
+                Up = up * p.Height,
+                AxisA = u * p.SizeU,
+                AxisB = v * p.SizeV,
+                Base = (p.OnRoof ? roof : ground) + a * p.Ca + b * p.Cb + up * p.Z,
+                Center = wall.Center,
+                Variant = p.Variant,
+                Style = Buildings.StyleNone,
+                IsDetail = true,
+            });
+        }
+    }
+
+    /// <summary>How far from a house a road still decides which side the door is on.</summary>
+    private const double RoadSearchMeters = 70;
 
     /// <summary>Round tank: foot ring, insulation bands, a ladder and a pipe up the side.</summary>
     private static void AddTank(Tile tile, in BuildingInstance wall)

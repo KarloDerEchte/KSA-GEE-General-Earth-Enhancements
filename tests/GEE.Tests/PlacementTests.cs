@@ -166,6 +166,28 @@ public class PlacementTests
         Assert.Equal(Geo.Len(wall.Base + wall.Up) - 0.02, Geo.Len(roof.Base), 4);
     }
 
+    [Theory]
+    [InlineData(20, 5, 0)]     // long: first hip shape
+    [InlineData(20, 13, 1)]
+    [InlineData(12, 12, 2)]    // square: pyramid
+    public void HipVariant_PicksTheRidgeInsetThatFitsTheFootprint(double ridge, double across, int shape)
+    {
+        int gable = Buildings.FirstRoofVariant + 1;
+        int hip = Placement.HipVariant(gable, across / ridge);
+        Assert.Equal(Buildings.FirstHipVariant + shape * Buildings.RoofVariants + 1, hip);
+    }
+
+    [Fact]
+    public void MakeRoof_OfAHipBuilding_UsesAHipVariant_AndOtherRoofsStayAsTheyAre()
+    {
+        var b = Building(variant: 1); b.RoofHeight = 3.5; b.RoofVariant = Buildings.FirstRoofVariant + 2; b.RoofHip = true;
+        var wall = Placement.MakeInstance(b, new Box2(0, 0, 0, 20, 10), R, 0, Geo.Flat());
+        Assert.Equal(Buildings.FirstHipVariant + 1 * Buildings.RoofVariants + 2 - Buildings.RoofVariants, Placement.MakeRoof(wall, b).Variant);
+        Assert.Equal(2.0, Geo.Len(Placement.MakeRoof(wall, b, 2.0).Up), 6);
+        b.RoofVariant = Buildings.MetalRoofVariant;
+        Assert.Equal(Buildings.MetalRoofVariant, Placement.MakeRoof(wall, b).Variant);
+    }
+
     [Fact]
     public void MakeDome_IsFortyPercentOfTheDiameterHigh_OnTopOfTheTank()
     {

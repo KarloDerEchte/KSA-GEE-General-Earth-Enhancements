@@ -30,10 +30,13 @@ internal static partial class RoadWear
 
     private static bool Wanted => Settings is not { RoadWear: false };
 
+    /// <summary>The tag column is needed by road wear or by the building tint.</summary>
+    private static bool Needed => Wanted || BuildingTint.Wanted;
+
     /// <summary>StaticObject.vert with the tag taken out of the matrix and passed on, or null.</summary>
     public static string? PatchVertex(string source)
     {
-        if (!Wanted || !source.Contains(VertMatrix) || !source.Contains(VertOut) || !source.Contains(VertDraw))
+        if (!Needed || !source.Contains(VertMatrix) || !source.Contains(VertOut) || !source.Contains(VertDraw))
             return null;
         source = source.Replace(VertMatrix, VertMatrix + """
                 // GEE: road wear tag in the fourth column (GEE RoadWear.cs); the position's w stays 1.
@@ -63,7 +66,7 @@ internal static partial class RoadWear
     /// <summary>StaticObject.frag (already carrying ShaderPatch's lift) with the wear, or null.</summary>
     public static string? PatchFragment(string source)
     {
-        if (!_vertexPatched || !Wanted || !source.Contains(FragIn) || !source.Contains(FragMain) || !source.Contains(FragLift))
+        if (!_vertexPatched || !Needed || !source.Contains(FragIn) || !source.Contains(FragMain) || !source.Contains(FragLift))
             return null;
         var inv = CultureInfo.InvariantCulture;
         string F(double v) => v.ToString("0.0###", inv);
@@ -73,11 +76,13 @@ internal static partial class RoadWear
             layout (location = 5) in vec4 inGeeLocal;
 
             """.Replace("\r\n", "\n"))
-            .Replace(FragMain, Functions.Replace("STRENGTH", F(strength)) + FragMain)
+            .Replace(FragMain, Functions.Replace("STRENGTH", F(strength)) + BuildingTint.Functions(BuildingTint.Settings?.BuildingTintStrength ?? 1.0) + FragMain)
             .Replace(FragLift, FragLift + """
             #ifndef SAMPLE_TERRAIN
                 if (geeShadowLift > 0.0)
                     geeRoadWear(inGeeTag, inGeeLocal, sampledColor, rough, ao);
+                else if (inGeeTag > 0.0)
+                    geeBuildingTint(inGeeTag, sampledColor);
             #endif
 
             """.Replace("\r\n", "\n"));

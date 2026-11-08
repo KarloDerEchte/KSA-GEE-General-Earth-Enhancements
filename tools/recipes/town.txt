@@ -1,0 +1,17 @@
+# Baseline view of generic buildings: Titusville / Cocoa streets at low altitude and from a few hundred metres.
+load Launch_A
+waitidle 60
+clouds off
+sunel 35
+camera Free
+follow Earth
+view 28.6080 -80.8090 90 28.6110 -80.8040 10
+waitidle 90
+wait 15
+shot town_a
+view 28.5400 -80.8200 400 28.5440 -80.8100 0
+wait 15
+shot town_b
+view 28.3900 -80.6050 160 28.3930 -80.5990 5
+wait 15
+shot town_c

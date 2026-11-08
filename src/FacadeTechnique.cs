@@ -97,6 +97,8 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
         layout(location = 3) flat out vec4 outGrid;
         // window glass rectangle within its cell: x0, x1, y0, y1
         layout(location = 4) flat out vec4 outGlass;
+        // 1 when balconies and shop fronts are drawn (Settings.FacadeExtras)
+        layout(location = 5) flat out float outExtras;
 
         const vec2 corners[6] = vec2[](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0));
 
@@ -120,11 +122,14 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
             float height = length(up.xyz);
             float sizeY = height - axisA.w;
             outWall = vec2(q.x * width, q.y * height - axisA.w);
-            outParams = vec4(up.w, float(wall), axisB.w, base.w);
+            // Style in the low bits of axisB.w; FacadeRenderer.ExtrasOffBit set = no balconies/shop fronts.
+            int rawStyle = int(axisB.w + 0.5);
+            outExtras = rawStyle >= 64 ? 0.0 : 1.0;
+            outParams = vec4(up.w, float(wall), float(rawStyle & 63), base.w);
             outSize = vec2(width, sizeY);
 
             // Window grid of the wall's style, once per vertex instead of once per pixel.
-            int style = int(axisB.w + 0.5);
+            int style = rawStyle & 63;
             float floorHeight, bayWidth, lit;
             vec4 glass;
             if (style == 1)      { floorHeight = 3.7; bayWidth = 1.8; glass = vec4(0.06, 0.94, 0.12, 0.88); lit = 0.5; }  // office
@@ -139,7 +144,7 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
         }
         """;
 
-    private const string FragmentShader = ShaderSource.Version + Hash + """
+    private const string FragmentShader = ShaderSource.Version + Hash + FacadeExtras.Glsl + """
         layout(location = 0) in vec2 wallPos;
         layout(location = 1) flat in vec4 params;
         layout(location = 2) flat in vec2 size;
@@ -147,6 +152,7 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
         layout(location = 3) flat in vec4 grid;
         // window glass rectangle within its cell: x0, x1, y0, y1
         layout(location = 4) flat in vec4 glass;
+        layout(location = 5) flat in float extras;
 
         layout(location = 0) out vec4 outColor;
 
@@ -255,6 +261,20 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
             float oy = smoothstep(outer.z - fw.y, outer.z + fw.y, f.y) - smoothstep(outer.w - fw.y, outer.w + fw.y, f.y);
             float frameCover = max(ox * oy - cover, 0.0);
 
+            // Houses and flats: a mullion down the middle of wide panes and a transom across them (glazing bars), a lintel
+            // over the opening, and the shadow the reveal throws on the glass along its top and left edge.
+            float bars = 0.0;
+            if (style == 0 && glass.y - glass.x > 0.3)
+            {
+                float mull = 1.0 - smoothstep(0.011, 0.011 + fw.x, abs(f.x - 0.5 * (glass.x + glass.y)));
+                float trans = 1.0 - smoothstep(0.009, 0.009 + fw.y, abs(f.y - mix(glass.z, glass.w, 0.68)));
+                bars = max(mull * cy, trans * cx) * (1.0 - far);
+            }
+            float lintel = (smoothstep(outer.x - 0.02 - fw.x, outer.x - 0.02 + fw.x, f.x) - smoothstep(outer.y + 0.02 - fw.x, outer.y + 0.02 + fw.x, f.x))
+                * (smoothstep(outer.w - fw.y, outer.w + fw.y, f.y) - smoothstep(outer.w + 0.05 - fw.y, outer.w + 0.05 + fw.y, f.y));
+            float reveal = cover * (0.6 * (1.0 - smoothstep(0.0, 0.14, (glass.w - f.y) / (glass.w - glass.z)))
+                + 0.4 * (1.0 - smoothstep(0.0, 0.08, (f.x - glass.x) / (glass.y - glass.x))));
+
             uint cellId = uint(id.x) + uint(max(id.y, 0.0)) * 1024u + wall * 1048576u;
             // Light of lit windows: only at night (brightness 0 by day).
             vec3 emission = vec3(0.0);
@@ -264,7 +284,7 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
                 float tone = random(seed, cellId, 2u);
                 vec3 light = tone < 0.6 ? vec3(1.0, 0.72, 0.42) : tone < 0.9 ? vec3(1.0, 0.88, 0.72) : vec3(0.75, 0.85, 1.0);
                 light *= 0.6 + 0.8 * random(seed, cellId, 3u);
-                emission = light * on * cover;
+                emission = light * on * cover * (1.0 - bars);
             }
 
             // Glass darkness by day: some panes are curtained or reflect the bright sky.
@@ -274,14 +294,33 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
             // Slab edge between floors (a shadow line) and, on the ground floor, a taller shop front.
             float slab = 1.0 - smoothstep(0.05, 0.05 + fw.y * 2.0, f.y);
             float groundShop = id.y < 0.5 && style != 0 ? 1.0 : 0.0;
-            float alpha = 1.0 - (1.0 - glassAlpha) * cover - 0.22 * frameCover - 0.14 * slab;
+            float alpha = 1.0 - (1.0 - glassAlpha) * cover * (1.0 - bars) - 0.22 * (frameCover + bars * cover) - 0.14 * slab
+                - 0.10 * lintel * (1.0 - far) - 0.12 * reveal * (1.0 - far);
             alpha -= 0.12 * groundShop * cover;
             alpha -= 0.16 * foot + 0.10 * eave;
+
+            // Balconies (housing) and shop fronts (office, ribbon windows), see FacadeExtras.
+            vec3 dayTint = vec3(0.0);
+            if (extras > 0.5 && far < 1.0)
+            {
+                vec2 pw = max(fwidth(wallPos), vec2(1e-4));
+                if (style == 0)
+                    alpha -= balconyDarkening(wallPos, pw, bayWidth, grid.x, floors, size.x, seed, wall) * (1.0 - far);
+                else if (style == 1 || style == 6)
+                {
+                    float shopAlpha = alpha;
+                    vec3 shopGlow = vec3(0.0), shopTint = vec3(0.0);
+                    shopFront(wallPos, pw, grid.x, size.x, seed, wall, foot, shopAlpha, shopGlow, shopTint);
+                    alpha = mix(shopAlpha, alpha, far);
+                    emission += shopGlow * (1.0 - far);
+                    dayTint = shopTint * (1.0 - far) * (1.0 - smoothstep(0.0, 0.05, brightness));
+                }
+            }
 
             emission = mix(emission, vec3(1.0, 0.8, 0.55) * lit * meanCover, far);
             alpha = mix(alpha, meanAlpha, far);
 
-            outColor = vec4(emission * brightness, clamp(alpha, 0.2, 1.0));
+            outColor = vec4(emission * brightness + dayTint, clamp(alpha, 0.2, 1.0));
         }
         """;
 }
@@ -293,6 +332,8 @@ internal static class FacadeRenderer
     private static FacadeInstance[] _instances = new FacadeInstance[4096];
     private static int _count;
     public static int LastBoxes;
+    /// <summary>Balconies and shop fronts on the walls (Settings.FacadeExtras); off adds 64 to the style the shader gets.</summary>
+    public static volatile bool Extras = true;
 
     /// <summary>Called by BuildingRenderer before it hands out the frame's boxes.</summary>
     public static void Begin() => _count = 0;
@@ -330,7 +371,7 @@ internal static class FacadeRenderer
         {
             Up = Row(Placement.ToEgo(b.Up, rx, ry, rz), b.Seed & 0xFFFFFF),
             AxisA = Row(Placement.ToEgo(b.AxisA, rx, ry, rz), b.GroundOffset),
-            AxisB = Row(Placement.ToEgo(b.AxisB, rx, ry, rz), b.Style),
+            AxisB = Row(Placement.ToEgo(b.AxisB, rx, ry, rz), b.Style + (Extras ? 0 : 64)),
             Base = Row(Placement.ToEgo(b.Base - cameraCcf, rx, ry, rz), brightness),
         };
     }

@@ -26,6 +26,7 @@
     <Compile Include="$(SrcDir)Footprint.cs" Link="src\Footprint.cs" />
     <Compile Include="$(SrcDir)Earcut.cs" Link="src\Earcut.cs" />
     <Compile Include="$(SrcDir)Buildings.cs" Link="src\Buildings.cs" />
+    <Compile Include="$(SrcDir)RegionStyles.cs" Link="src\RegionStyles.cs" />
     <Compile Include="$(SrcDir)Roads.cs" Link="src\Roads.cs" />
     <Compile Include="$(SrcDir)LightSet.cs" Link="src\LightSet.cs" />
     <Compile Include="$(SrcDir)Landmarks.cs" Link="src\Landmarks.cs" />
@@ -39,6 +40,9 @@
     <Compile Include="$(SrcDir)RoadJunctions.cs" Link="src\RoadJunctions.cs" />
     <Compile Include="$(SrcDir)RoadLayers.cs" Link="src\RoadLayers.cs" />
     <Compile Include="$(SrcDir)BuildingDetail.cs" Link="src/BuildingDetail.cs" />
+    <Compile Include="$(SrcDir)BalconyDetail.cs" Link="src/BalconyDetail.cs" />
+    <Compile Include="$(SrcDir)FacadeExtras.cs" Link="src/FacadeExtras.cs" />
+    <Compile Include="$(SrcDir)HouseDetail.cs" Link="src/HouseDetail.cs" />
     <Compile Include="$(SrcDir)ElevationData.cs" Link="src/ElevationData.cs" />
     <Compile Include="$(SrcDir)RiverData.cs" Link="src/RiverData.cs" />
     <Compile Include="$(SrcDir)WaterGeometry.cs" Link="src/WaterGeometry.cs" />
@@ -46,12 +50,14 @@
     <Compile Include="$(SrcDir)WorldCover.cs" Link="src/WorldCover.cs" />
     <Compile Include="$(SrcDir)BuiltUp.cs" Link="src/BuiltUp.cs" />
     <Compile Include="$(SrcDir)RoadWear.cs" Link="src/RoadWear.cs" />
+    <Compile Include="$(SrcDir)BuildingTint.cs" Link="src/BuildingTint.cs" />
     <Compile Include="$(SrcDir)RoadWearTag.cs" Link="src/RoadWearTag.cs" />
     <Compile Include="$(SrcDir)Clutter.cs" Link="src/Clutter.cs" />
     <Compile Include="$(SrcDir)RoadFurniture.cs" Link="src/RoadFurniture.cs" />
     <Compile Include="$(SrcDir)JunctionMarkings.cs" Link="src/JunctionMarkings.cs" />
     <Compile Include="$(SrcDir)DownloadGate.cs" Link="src/DownloadGate.cs" />
     <Compile Include="$(SrcDir)Settings.cs" Link="src/Settings.cs" />
+    <Compile Include="$(SrcDir)TowerMassing.cs" Link="src\TowerMassing.cs" />
     <Compile Include="$(SrcDir)Pipelines.cs" Link="src\Pipelines.cs" />
     <Compile Include="$(SrcDir)PipelineData.cs" Link="src\PipelineData.cs" />
   </ItemGroup>

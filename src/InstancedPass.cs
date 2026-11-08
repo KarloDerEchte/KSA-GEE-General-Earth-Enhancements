@@ -72,6 +72,13 @@ internal abstract class InstancedPass<T> : InstancedRenderTechnique<T> where T :
     }
 
     public void Draw(CommandBuffer commandBuffer, IViewport viewport, int frameIndex, ReadOnlySpan<T> instances)
+        => Draw(commandBuffer, viewport, frameIndex, instances, 0, 0);
+
+    /// <summary>
+    /// The last <paramref name="coarseCount"/> instances are drawn with <paramref name="coarseVertices"/> vertices each
+    /// (a coarser mesh), the ones before them with the full vertex count.
+    /// </summary>
+    public void Draw(CommandBuffer commandBuffer, IViewport viewport, int frameIndex, ReadOnlySpan<T> instances, int coarseCount, int coarseVertices)
     {
         int count = Math.Min(instances.Length, _capacity);
         if (count == 0)
@@ -104,7 +111,11 @@ internal abstract class InstancedPass<T> : InstancedRenderTechnique<T> where T :
         sets[1] = TextureSet;
         commandBuffer.BindDescriptorSets(VkPipelineBindPoint.Graphics, PipelineLayout, 0, sets, default);
         commandBuffer.BindVertexBuffer(0, buffer.VkBuffer);
-        commandBuffer.Draw(_vertexCount, count, 0, 0);
+        coarseCount = Math.Clamp(coarseCount, 0, count);
+        if (count - coarseCount > 0)
+            commandBuffer.Draw(_vertexCount, count - coarseCount, 0, 0);
+        if (coarseCount > 0)
+            commandBuffer.Draw(coarseVertices, coarseCount, 0, count - coarseCount);
     }
 
     public override void Dispose()

@@ -29,7 +29,7 @@ public struct SatInstance
     public float4 Geo2;
     /// <summary>UV offset and scale within the layer (a parent's part while the tile itself loads).</summary>
     public float4 Uv;
-    /// <summary>x opacity, y sunlight, z height (m) the tile is pulled in front of the ground, along the view ray.</summary>
+    /// <summary>x opacity, y sunlight, z height (m) the tile is pulled in front of the ground, along the view ray, w grid cells per side (16 or 8).</summary>
     public float4 Params;
     /// <summary>
     /// 9 x 9 terrain heights (rows north to south on the vertex grid's Mercator rows, columns west to east), 10 bits
@@ -48,7 +48,7 @@ public struct SatInstance
 internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatInstance>("GEESatellite", VertexShader, FragmentShader,
     MaxTiles, Grid * Grid * 6, array, Program.LinearClampedSampler)
 {
-    public const int MaxTiles = 1024, Grid = 16;
+    public const int MaxTiles = 1024, Grid = 16, CoarseGrid = 8;
 
     private static readonly Brutal.Memory.PtrOwner<VkPipelineColorBlendAttachmentState> Attachment = new(new VkPipelineColorBlendAttachmentState
     {
@@ -100,7 +100,7 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
         layout(location = 0) out vec3 outUv;
         layout(location = 1) flat out vec2 outLook;
 
-        const int GRID = 16, HGRID = 9;
+        const int HGRID = 9;
         const vec2 corners[6] = vec2[](vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 0), vec2(1, 1), vec2(0, 1));
 
         float gridHeight(uvec4 words[7], int col, int row)
@@ -111,6 +111,7 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
 
         void main()
         {
+            int GRID = int(params.w);                                  // 16, or 8 for tiles small enough that the sphere's curvature hides in the pull
             int cell = gl_VertexIndex / 6;
             vec2 q = (vec2(cell % GRID, cell / GRID) + corners[gl_VertexIndex % 6]) / float(GRID);
             // q: x eastward, y southward (as the image). Mercator rows: latitude from the ordinate.
@@ -176,6 +177,8 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
 /// </summary>
 internal static class SatelliteImagery
 {
+    /// <summary>Texels per screen pixel a tile may cover before it is split into finer ones (higher: coarser and less to download).</summary>
+    private const double SatelliteDetail = 2.0;
     private const int TileSize = 256, Layers = 512, MaxZoom = 14, MinZoom = 3, UploadsPerFrame = 8, WorkerCount = 8;
     /// <summary>Seconds a newly loaded tile takes to fade in over the coarser image it replaces.</summary>
     private const double FadeInSeconds = 0.6;
@@ -209,6 +212,9 @@ internal static class SatelliteImagery
     /// <summary>Tiles whose heights are queued or being sampled, with the last frame they were wanted in.</summary>
     private static readonly ConcurrentDictionary<(int, int, int), long> HeightPending = new();
     private static readonly ConcurrentQueue<(int, int, int)> HeightQueue = new();
+
+    /// <summary>Unfinished work: tiles being fetched/decoded plus queued height samplings (cheap; for AutoShot waitidle).</summary>
+    public static int Busy { get { lock (Lock) return Pending.Count + HeightQueue.Count; } }
     private static readonly List<((int, int, int) Key, double Dist)> HeightWanted = new();
     private static Celestial? _body;
     private static long _heightTicks, _heightTiles;
@@ -241,7 +247,7 @@ internal static class SatelliteImagery
             if (n == 0)
                 return;
             _technique ??= new SatelliteTechnique(_texture!.VkImageView);
-            _technique.Draw(commandBuffer, viewport, frameIndex, _buffer.AsSpan(0, n));
+            _technique.Draw(commandBuffer, viewport, frameIndex, _buffer.AsSpan(0, n), _coarseCount, SatelliteTechnique.CoarseGrid * SatelliteTechnique.CoarseGrid * 6);
         }
         catch (Exception e)
         {
@@ -252,7 +258,7 @@ internal static class SatelliteImagery
         }
     }
 
-    private static double _cameraLat, _cameraLon, _planetRadius;
+    private static double _cameraLat, _cameraLon, _planetRadius, _cameraAltitude;
     /// <summary>Counts changes of the loaded layers, so the ground colour table is only rebuilt after one.</summary>
     private static long _layerVersion;
 
@@ -277,10 +283,24 @@ internal static class SatelliteImagery
             CommandBuffer cb = default;
             bool started = false;
             int done = 0;
-            foreach (var key in Decoded.Keys.ToList())
+            // Coarse tiles first (they stand in for finer ones); nothing to do when nothing was decoded.
+            foreach (var key in Decoded.IsEmpty ? new List<(int, int, int)>() : Decoded.Keys.OrderBy(k => k.Item1).ToList())
             {
                 if (done >= UploadsPerFrame)
                     break;
+                // Left behind by the view while it waited: not worth a layer (and the eviction of a useful one).
+                bool stale;
+                lock (Lock)
+                {
+                    stale = IsStale(key);
+                    if (stale)
+                        Pending.Remove(key);
+                }
+                if (stale)
+                {
+                    Decoded.TryRemove(key, out _);
+                    continue;
+                }
                 int layer = FreeLayer();
                 if (layer < 0 || !Decoded.TryRemove(key, out byte[]? pixels))
                     break;
@@ -304,8 +324,11 @@ internal static class SatelliteImagery
             }
             // The ground colour table after this batch's layers: in the same submission, so no frame sees a table
             // naming a layer that now holds another tile.
-            if (GroundTint.Active && GroundTint.HasTexture && _planetRadius > 0
-                && GroundTint.Build(_cameraLat, _cameraLon, _planetRadius, settings, _layerVersion, LoadedLayer))
+            bool tintChanged;
+            using (Perf.Measure("  ground table"))
+                tintChanged = GroundTint.Active && GroundTint.HasTexture && _planetRadius > 0
+                    && GroundTint.Build(_cameraLat, _cameraLon, _planetRadius, _cameraAltitude, settings, _layerVersion, LoadedLayer);
+            if (tintChanged)
             {
                 if (!started)
                 {
@@ -315,6 +338,17 @@ internal static class SatelliteImagery
                 }
                 GroundTint.RecordUpload(cb, staging);
             }
+            if (GroundClasses.Active && GroundClasses.HasTexture && _planetRadius > 0
+                && GroundClasses.Build(_cameraLat, _cameraLon, _planetRadius, _cameraAltitude, settings))
+            {
+                if (!started)
+                {
+                    cb = staging.NextCommandBuffer();
+                    cb.Begin(VkCommandBufferUsageFlags.OneTimeSubmitBit);
+                    started = true;
+                }
+                GroundClasses.RecordUpload(cb, staging);
+            }
             if (started)
             {
                 cb.End();
@@ -323,6 +357,8 @@ internal static class SatelliteImagery
                 // The table's first contents are now ahead of every later frame in the queue.
                 if (GroundTint.Active)
                     GroundTint.Bind(_texture!);
+                if (GroundClasses.Active)
+                    GroundClasses.Bind();
             }
             LoadedLayers = Layer.Count;
         }
@@ -376,9 +412,14 @@ internal static class SatelliteImagery
             }));
         if (GroundTint.Active)
             GroundTint.CreateTexture(renderer, cb);
+        if (GroundClasses.Active)
+            GroundClasses.CreateTexture(renderer, cb);
+        if (GroundTexture.Active)
+            GroundTexture.CreateTexture(renderer, cb, _staging);
         cb.End();
         _staging.Submit();
         _staging.Wait();
+        GroundTexture.Bind();
         _get ??= NetLoader.CreateGet(ModDir);
         _workers = new Thread[WorkerCount];
         for (int i = 0; i < _workers.Length; i++)
@@ -428,18 +469,23 @@ internal static class SatelliteImagery
     private static int Collect(Camera camera, Celestial body, Settings settings)
     {
         Instances.Clear();
+        Coarse.Clear();
         double3 cam = Double3Ex.Transform(camera.PositionEcl - body.GetPositionEcl(), body.GetCce2Ccf());
         double camR = Math.Sqrt(double3.Dot(cam, cam));
         double planetR = body.MeanRadius;
         double altitude = camR - planetR;
         _cameraLat = Math.Asin(Math.Clamp(cam.Z / camR, -1, 1));
         _planetRadius = planetR;
+        _cameraAltitude = altitude;
         _cameraLon = Math.Atan2(cam.Y, cam.X);
         // The drape fades in with altitude; the ground colour (GroundTint) needs the same tiles at every height. With
         // the ground colour the terrain itself shows the photo (lit by the game), and a drape over it only showed
         // where the terrain poked through it, in bands along the slopes: then there is no drape.
-        float fade = settings.SatelliteImagery && !GroundTint.Active
-            ? Smooth(settings.SatelliteFadeFromM, settings.SatelliteFadeFromM * 4, altitude) : 0;
+        // With GroundTintFadeStartKm > 0 the ground colour fades out above GroundTintFadeEndKm and the drape (the plain photo, as the
+        // imagery looked from orbit before the ground colour existed) takes over, complete at GroundTintFadeStartKm.
+        float fade = !settings.SatelliteImagery ? 0
+            : !GroundTint.Active ? Smooth(settings.SatelliteFadeFromM, settings.SatelliteFadeFromM * 4, altitude)
+            : settings.GroundTintFadeStartKm > 0 ? Smooth(Math.Clamp(settings.GroundTintFadeEndKm, 0, settings.GroundTintFadeStartKm - 0.01) * 1000, settings.GroundTintFadeStartKm * 1000, altitude) : 0;
         if (fade <= 0 && !GroundTint.Active)
             return 0;
         doubleQuat ccf2Cce = body.GetCcf2Cce();
@@ -457,14 +503,19 @@ internal static class SatelliteImagery
         if (HeightCache.Count > 50000)
             HeightCache.Clear();
 
+        if (_geoRadius != planetR || GeoCache.Count > 30000)
+        {
+            GeoCache.Clear();
+            _geoRadius = planetR;
+        }
+        (_splitPrev, _splitNow) = (_splitNow, _splitPrev);
+        _splitNow.Clear();
+
         void Visit(int z, int x, int y)
         {
-            var (s, w, n, e) = VectorTile.Bounds(z, x, y);
-            double3 c = Placement.DirCcf((s + n) / 2, (w + e) / 2);
-            double cosLat = Math.Cos((s + n) / 2 * Math.PI / 180);
-            double halfE = (e - w) / 2 * Math.PI / 180 * planetR * cosLat;
-            double halfN = (n - s) / 2 * Math.PI / 180 * planetR;
-            double radius = Math.Sqrt(halfE * halfE + halfN * halfN);
+            TileGeo g = Geo(z, x, y, planetR);
+            double3 c = g.C;
+            double halfE = g.HalfE, halfN = g.HalfN, radius = g.Radius;
             double angle = Math.Acos(Math.Clamp(double3.Dot(c, camDir), -1, 1));
             if (angle - radius / planetR > horizon + 0.02)
                 return;
@@ -476,13 +527,16 @@ internal static class SatelliteImagery
             double near = Math.Max(dist - radius, altitude * 0.9);
             // Split while a texel would cover more than about 1.5 pixels.
             double texel = 2 * halfN / TileSize;
-            if (z < MaxZoom && texel / (near * pixelAngle) > 1.5)
+            // Hysteresis: a tile split last frame stays split a little longer, so a camera hovering at the limit
+            // does not flip between two levels (and keep evicting and reloading the coarser layer).
+            if (z < MaxZoom && texel / (near * pixelAngle) > (_splitPrev.Contains((z, x, y)) ? SatelliteDetail * 0.85 : SatelliteDetail))
             {
+                _splitNow.Add((z, x, y));
                 for (int k = 0; k < 4; k++)
                     Visit(z + 1, x * 2 + (k & 1), y * 2 + (k >> 1));
                 return;
             }
-            Emit(z, x, y, c, halfE, halfN, rel, dist, body, planetR, rx, ry, rz, fade, sun);
+            Emit(z, x, y, g, rel, dist, planetR, rx, ry, rz, fade, sun);
         }
 
         int roots = 1 << MinZoom;
@@ -496,6 +550,7 @@ internal static class SatelliteImagery
             // Coarse tiles first (they stand in for everything below them), near before far.
             foreach (var key in Wanted.OrderBy(kv => kv.Key.Item1).ThenBy(kv => kv.Value).Select(kv => kv.Key).Take(64))
             {
+                WantedAt[key] = _frame;
                 if (RetryAt.TryGetValue(key, out var retry))
                 {
                     if (DateTime.UtcNow < retry)
@@ -509,6 +564,9 @@ internal static class SatelliteImagery
                 }
             }
             // Heights the same way; queued tiles still wanted are marked, so workers skip the ones left behind.
+            if (WantedAt.Count > 4096)
+                foreach (var old in WantedAt.Where(kv => _frame - kv.Value > 600).Select(kv => kv.Key).ToList())
+                    WantedAt.Remove(old);
             int heights = 0;
             foreach (var (key, _) in HeightWanted.OrderBy(w => w.Key.Item1).ThenBy(w => w.Dist))
             {
@@ -525,19 +583,67 @@ internal static class SatelliteImagery
                 Signal.Release(added + heights);
         }
 
-        int count = Math.Min(Instances.Count, SatelliteTechnique.MaxTiles);
+        // Full grid tiles first, then the coarse ones (drawn with fewer vertices, see Draw).
+        int fine = Math.Min(Instances.Count, SatelliteTechnique.MaxTiles);
+        int coarse = Math.Min(Coarse.Count, SatelliteTechnique.MaxTiles - fine);
+        int count = fine + coarse;
         if (_buffer.Length < count)
             Array.Resize(ref _buffer, Math.Max(count, _buffer.Length * 2));
-        for (int i = 0; i < count; i++)
-            _buffer[i] = Instances[i];
+        CollectionsMarshal.AsSpan(Instances)[..fine].CopyTo(_buffer);
+        CollectionsMarshal.AsSpan(Coarse)[..coarse].CopyTo(_buffer.AsSpan(fine));
+        _coarseCount = coarse;
         return count;
+    }
+
+    private static readonly List<SatInstance> Coarse = new();
+    private static int _coarseCount;
+    private static HashSet<(int, int, int)> _splitPrev = new(), _splitNow = new();
+    /// <summary>Last frame each queued or decoded tile was still wanted (under Lock).</summary>
+    private static readonly Dictionary<(int, int, int), long> WantedAt = new();
+
+    private static bool IsStale((int, int, int) key) => !WantedAt.TryGetValue(key, out long at) || Interlocked.Read(ref _frame) - at > 180;
+
+    /// <summary>Per-tile constants (bounds, centre direction, frame, sizes), computed once instead of every frame.</summary>
+    private sealed class TileGeo
+    {
+        public double HalfE, HalfN, Radius, Arc;
+        public double3 C, East, North;
+        public float Lat0, Lon0, MercN, MercS, WestRad, EastRad;
+    }
+
+    private static readonly Dictionary<(int, int, int), TileGeo> GeoCache = new();
+    private static double _geoRadius;
+
+    private static TileGeo Geo(int z, int x, int y, double planetR)
+    {
+        if (GeoCache.TryGetValue((z, x, y), out TileGeo? g))
+            return g;
+        var (s, w, n, e) = VectorTile.Bounds(z, x, y);
+        g = new TileGeo();
+        g.C = Placement.DirCcf((s + n) / 2, (w + e) / 2);
+        double cosLat = Math.Cos((s + n) / 2 * Math.PI / 180);
+        g.HalfE = (e - w) / 2 * Math.PI / 180 * planetR * cosLat;
+        g.HalfN = (n - s) / 2 * Math.PI / 180 * planetR;
+        g.Radius = Math.Sqrt(g.HalfE * g.HalfE + g.HalfN * g.HalfN);
+        g.Arc = Math.Max(e - w, n - s) * Math.PI / 180 * planetR;
+        Placement.Axes(g.C, out g.East, out g.North);
+        g.Lat0 = (float)((s + n) / 2 * Math.PI / 180);
+        g.Lon0 = (float)((w + e) / 2 * Math.PI / 180);
+        g.MercN = (float)Merc(n);
+        g.MercS = (float)Merc(s);
+        g.WestRad = (float)(w * Math.PI / 180);
+        g.EastRad = (float)(e * Math.PI / 180);
+        GeoCache[(z, x, y)] = g;
+        return g;
     }
 
     private static readonly ConcurrentQueue<(int, int, int)> WorkQueue = new();
 
-    private static void Emit(int z, int x, int y, double3 centerDir, double halfE, double halfN, double3 rel, double dist, Celestial body,
+    private static void Emit(int z, int x, int y, TileGeo geo, double3 rel, double dist,
         double planetR, double3 rx, double3 ry, double3 rz, float fade, double3? sun)
     {
+        double3 centerDir = geo.C;
+        double halfN = geo.HalfN;
         var key = (z, x, y);
         // The tile's own layer, or the nearest loaded ancestor's matching part.
         int layer = -1, az = z, ax = x, ay = y;
@@ -566,6 +672,13 @@ internal static class SatelliteImagery
             LayerUsed[layer] = _frame;                                  // drawn by the drape or the ground colour
         if (fade <= 0)
             return;                                                    // ground colour only: no drape, no heights
+        // On the night side the photo would only lay a dark veil over the buildings, roads and their lights: it
+        // fades out from about 10 degrees of sun to the terminator. (Decided before the heights are asked for, so
+        // tiles that are not drawn are not sampled either.)
+        float light = sun is { } sd ? (float)Math.Clamp(0.1 + 1.15 * double3.Dot(centerDir, sd), 0.02, 1.0) : 1f;
+        fade *= Smooth(0.1, 0.32, light);
+        if (fade < 0.004f)
+            return;
         bool ownHeights = HeightCache.TryGetValue(key, out TileHeights? own);
         if (!ownHeights)
             HeightWanted.Add((key, dist));
@@ -573,39 +686,36 @@ internal static class SatelliteImagery
             return;
 
         Span<uint> words = stackalloc uint[HeightWords];
-        float low, span, residual;
+        float low, span, residual, twist;
         if (ownHeights)
         {
             own!.Words.CopyTo(words);
             (low, span, residual) = (own.Low, own.Span, own.Residual);
+            twist = own.Twist;
         }
-        else if (!AncestorHeights(z, x, y, words, out low, out span, out residual))
+        else if (!AncestorHeights(z, x, y, words, out low, out span, out residual, out twist))
             return;                                                    // nothing to stand on yet
-        Placement.Axes(centerDir, out double3 east, out double3 north);
         // rel is the centre on the mean sphere minus the camera; the ground point adds the terrain height.
         double3 egoCenter = Rotate(rel + centerDir * low, rx, ry, rz);
-        double3 eE = Rotate(east, rx, ry, rz), eN = Rotate(north, rx, ry, rz), eU = Rotate(centerDir, rx, ry, rz);
-        float light = sun is { } sd ? (float)Math.Clamp(0.1 + 1.15 * double3.Dot(centerDir, sd), 0.02, 1.0) : 1f;
-        // On the night side the photo would only lay a dark veil over the buildings, roads and their lights: it
-        // fades out from about 10 degrees of sun to the terminator.
-        fade *= Smooth(0.1, 0.32, light);
-        if (fade <= 0)
-            return;
-        var (bs, bw, bn, be) = VectorTile.Bounds(z, x, y);
-        double lat0 = (bs + bn) / 2 * Math.PI / 180, lon0 = (bw + be) / 2 * Math.PI / 180;
+        double3 eE = Rotate(geo.East, rx, ry, rz), eN = Rotate(geo.North, rx, ry, rz), eU = Rotate(centerDir, rx, ry, rz);
+        // Tiles small enough on the sphere take an 8 x 8 grid: its vertices are the height samples themselves; what
+        // it gives up (the sphere's sag across a cell and the diagonal of the cell's two triangles) goes into the pull.
+        double cellArc = geo.Arc / SatelliteTechnique.CoarseGrid;
+        double sag = cellArc * cellArc / (8 * planetR);
+        bool coarse = sag <= 0.6;
         // Height the drape must clear: the terrain rising between the height samples (measured when sampled) plus
         // the 10-bit rounding, the game's coarse distant terrain triangles (a small part of the tile's size), and
         // once faded in, the trees and low buildings standing on the ground (the photo shows them already).
-        double pull = 3 + residual + span / 1023 + 0.004 * halfN + CanopyMeters * fade;
+        double pull = 3 + residual + span / 1023 + 0.004 * halfN + CanopyMeters * fade + (coarse ? sag + twist : 0);
         var instance = new SatInstance
         {
             Center = new float4((float)egoCenter.X, (float)egoCenter.Y, (float)egoCenter.Z, layer),
             East = new float4((float)eE.X, (float)eE.Y, (float)eE.Z, 0),
             North = new float4((float)eN.X, (float)eN.Y, (float)eN.Z, 0),
             Up = new float4((float)eU.X, (float)eU.Y, (float)eU.Z, span),
-            Geo = new float4((float)lat0, (float)lon0, (float)Merc(bn), (float)Merc(bs)),
-            Geo2 = new float4((float)(bw * Math.PI / 180), (float)(be * Math.PI / 180), (float)(planetR + low), 3),
-            Params = new float4(fade, light, (float)pull, 0),
+            Geo = new float4(geo.Lat0, geo.Lon0, geo.MercN, geo.MercS),
+            Geo2 = new float4(geo.WestRad, geo.EastRad, (float)(planetR + low), 3),
+            Params = new float4(fade, light, (float)pull, coarse ? SatelliteTechnique.CoarseGrid : SatelliteTechnique.Grid),
             H0 = new uint4(words[0], words[1], words[2], words[3]),
             H1 = new uint4(words[4], words[5], words[6], words[7]),
             H2 = new uint4(words[8], words[9], words[10], words[11]),
@@ -616,6 +726,7 @@ internal static class SatelliteImagery
         };
 
         LayerUsed[layer] = _frame;
+        var target = coarse ? Coarse : Instances;
         // A tile that has just arrived fades in over the coarser part it replaces, instead of popping.
         double age = Clock.Elapsed.TotalSeconds - LayerLoadedAt[layer];
         if (az == z && age < FadeInSeconds)
@@ -630,13 +741,13 @@ internal static class SatelliteImagery
                 var under = instance;
                 under.Center.W = pl;
                 under.Uv = Part(z, x, y, pz, px, py);
-                Instances.Add(under);
+                target.Add(under);
                 float t = (float)(age / FadeInSeconds);
                 instance.Params.X = fade * t * t * (3 - 2 * t);
             }
         }
         instance.Uv = Part(z, x, y, az, ax, ay);
-        Instances.Add(instance);
+        target.Add(instance);
     }
 
     /// <summary>Where tile z/x/y lies inside its ancestor az/ax/ay, as UV offset and scale.</summary>
@@ -654,7 +765,7 @@ internal static class SatelliteImagery
     {
         public readonly float[] Values = new float[HeightPoints * HeightPoints];
         public readonly uint[] Words = new uint[HeightWords];
-        public float Low, Span, Residual;
+        public float Low, Span, Residual, Twist;
     }
 
     /// <summary>
@@ -695,7 +806,24 @@ internal static class SatelliteImagery
         // The finer sampling only catches part of what rises between the points.
         t.Residual = 1.5f * residual;
         Pack(t.Values, t.Words, out t.Low, out t.Span);
+        t.Twist = Twist(t.Values);
         return t;
+    }
+
+    /// <summary>
+    /// How far the surface of a cell split along its diagonal (the coarse grid) can differ from the bilinear one
+    /// (the fine grid): a quarter of the cell's twist, at its centre.
+    /// </summary>
+    private static float Twist(ReadOnlySpan<float> v)
+    {
+        float twist = 0;
+        for (int j = 0; j < HeightPoints - 1; j++)
+            for (int i = 0; i < HeightPoints - 1; i++)
+            {
+                int k = j * HeightPoints + i;
+                twist = Math.Max(twist, Math.Abs(v[k] + v[k + HeightPoints + 1] - v[k + 1] - v[k + HeightPoints]) * 0.25f);
+            }
+        return twist;
     }
 
     /// <summary>Heights as 10-bit fractions of the span above the lowest one, three per word (see SatInstance).</summary>
@@ -719,7 +847,7 @@ internal static class SatelliteImagery
     /// While a tile's own heights are being sampled: the nearest sampled ancestor's surface over the same area, so
     /// the tile neither sinks to sea level nor jumps. False if no ancestor has heights either.
     /// </summary>
-    private static bool AncestorHeights(int z, int x, int y, Span<uint> words, out float low, out float span, out float residual)
+    private static bool AncestorHeights(int z, int x, int y, Span<uint> words, out float low, out float span, out float residual, out float twist)
     {
         for (int pz = z - 1, px = x >> 1, py = y >> 1; pz >= MinZoom; pz--, px >>= 1, py >>= 1)
         {
@@ -742,9 +870,10 @@ internal static class SatelliteImagery
                 }
             Pack(values, words, out low, out span);
             residual = parent.Residual;
+            twist = Twist(values);
             return true;
         }
-        low = span = residual = 0;
+        low = span = residual = twist = 0;
         return false;
     }
 
@@ -764,6 +893,15 @@ internal static class SatelliteImagery
             }
             {
                 var (z, x, y) = key;
+                bool stale;
+                lock (Lock)
+                {
+                    stale = IsStale(key);
+                    if (stale)
+                        Pending.Remove(key);                           // the view moved on; asked for again if it comes back
+                }
+                if (stale)
+                    continue;
                 string path = Path.Combine(ModDir, "cache", "sat", z.ToString(), $"{x}_{y}.jpg");
                 try
                 {

@@ -1,0 +1,22 @@
+# Trees standing on the cut/ramped terrain at lake and sea shores (clutter uses the terrain GEE makes).
+load Launch_A
+waitidle 30
+clouds off
+waitidle 60
+sunel 40
+waitidle 30
+camera Free
+follow Earth
+view 28.600 -80.775 90 28.600 -80.790 0
+waitidle 70
+shot tf_indian_river
+view 28.520 -80.675 90 28.520 -80.690 0
+waitidle 60
+shot tf_banana_river
+view 28.370 -80.590 90 28.370 -80.600 0
+waitidle 60
+shot tf_cocoa_beach
+view 26.950 -80.780 120 26.950 -80.800 0
+waitidle 70
+shot tf_okeechobee
+assertnolog Exception

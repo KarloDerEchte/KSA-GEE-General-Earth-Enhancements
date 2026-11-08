@@ -1,0 +1,12 @@
+# VAB / LC-39A complex from further out (same spawn as pad; keep in one run with pad to amortize loads)
+load Launch_A
+waitidle 60
+sunel 30
+waitidle 30
+camera Orbit 200 -0.5 7.5
+wait 2
+shot vab_wide
+camera Orbit 320 -0.3 7.0
+wait 2
+shot vab_low
+assertnolog Exception

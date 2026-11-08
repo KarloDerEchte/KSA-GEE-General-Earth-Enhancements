@@ -4,6 +4,8 @@ public sealed class TileData
 {
     public List<RawBuilding> Buildings = new();
     public List<RawRoad> Roads = new();
+    /// <summary>Lake, river and sea polygons of the tile (tile coordinates, with their islands): buildings standing in them are dropped.</summary>
+    internal List<(WaterGeometry.Poly Area, int Extent)> WaterAreas = new();
 }
 
 /// <summary>
@@ -51,13 +53,78 @@ public static class VectorTile
             else
                 tile.Skip(wire);
         }
+        CullBuildingsInWater(result, z, x, y, options.PlanetRadius);
         Landmarks.AddTo(result, z, x, y);
         Pipelines.AddTo(result, z, x, y);
         Structures.AddTo(result, z, x, y);
         RoadMerges.Apply(result.Roads, options.PlanetRadius);
         RoadBridges.Apply(result.Roads, options.PlanetRadius, Placement.BridgeClearance);
         RoadJunctions.Find(result.Roads);
+        RoadLayers.Apply(result.Roads, options.PlanetRadius);
+        RoadBarriers.Prepare(result.Roads, options.PlanetRadius);
         return result;
+    }
+
+    /// <summary>Water polygons smaller than this (m2) are ponds and canals: houses stand next to them, and the lake pass does not draw them.</summary>
+    private const double MinCullWaterM2 = 20_000;
+    /// <summary>A building is in the water only if its centre and the points this far (m) to each side all are.</summary>
+    private const double CullInsetMeters = 10;
+
+    /// <summary>
+    /// OpenStreetMap has buildings over water (piers, boathouses, docks, mistagged outlines); the lake pass lowers the terrain there and
+    /// they would float or stand in it. Islands of the polygons (holes) keep theirs. Landmarks and launch complex parts stay.
+    /// </summary>
+    private static void CullBuildingsInWater(TileData result, int z, int x, int y, double planetRadius)
+    {
+        if (result.WaterAreas.Count == 0 || result.Buildings.Count == 0)
+            return;
+        var areas = BigWater(result.WaterAreas, z, x, y, planetRadius);
+        if (areas.Count == 0)
+            return;
+        result.Buildings.RemoveAll(b => b.Id >= 0 && !b.LaunchComplex && !b.Slab && InWater(areas, z, x, y, b.Lat, b.Lon, planetRadius));
+    }
+
+    /// <summary>The lake, river and sea polygons of a tile (any zoom) that are big enough to count: not ponds and canals.</summary>
+    internal static List<(WaterGeometry.Poly Area, int Extent)> WaterAreasOf(byte[] data)
+    {
+        var areas = new List<(WaterGeometry.Poly Area, int Extent)>();
+        ForEachFeature(data, layer => layer == "water", (layer, type, tags, geometry, extent) =>
+        {
+            if (type == 3 && tags.GetValueOrDefault("class") is "lake" or "river" or "ocean"
+                && tags.GetValueOrDefault("brunnel") is not "tunnel" && tags.GetValueOrDefault("intermittent") is not (double and not 0.0))
+                foreach (var area in WaterGeometry.Polygons(geometry))
+                    areas.Add((area, extent));
+        });
+        return areas;
+    }
+
+    internal static List<(WaterGeometry.Poly Area, int Extent)> BigWater(List<(WaterGeometry.Poly Area, int Extent)> all, int z, int x, int y, double planetRadius)
+    {
+        var (centerLat, _) = ToLatLon(z, x + 0.5, y + 0.5);
+        var areas = new List<(WaterGeometry.Poly Area, int Extent)>();
+        foreach (var (area, extent) in all)
+        {
+            double unit = 2 * Math.PI * planetRadius * Math.Cos(centerLat * Math.PI / 180) / (1 << z) / extent;
+            if (Math.Abs(Footprint.SignedArea(area.Outer)) * unit * unit >= MinCullWaterM2)
+                areas.Add((area, extent));
+        }
+        return areas;
+    }
+
+    /// <summary>True if the point and the four points CullInsetMeters around it are all inside one of the polygons (islands excluded).</summary>
+    internal static bool InWater(List<(WaterGeometry.Poly Area, int Extent)> areas, int z, int x, int y, double lat, double lon, double planetRadius)
+    {
+        int n = 1 << z;
+        double latRad = lat * Math.PI / 180;
+        double fx = (lon + 180) / 360 * n - x, fy = (1 - Math.Asinh(Math.Tan(latRad)) / Math.PI) / 2 * n - y;
+        foreach (var (area, extent) in areas)
+        {
+            double px = fx * extent, py = fy * extent;
+            double r = CullInsetMeters / (2 * Math.PI * planetRadius * Math.Cos(latRad) / n / extent);
+            if (area.Contains(px, py) && area.Contains(px + r, py) && area.Contains(px - r, py) && area.Contains(px, py + r) && area.Contains(px, py - r))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>Feature of any layer: geometry type (1 point, 2 line, 3 polygon), tags, encoded geometry and extent.</summary>
@@ -151,7 +218,7 @@ public static class VectorTile
                 case 5 when wire == 0: extent = (int)layer.Varint(); break;
                 default: layer.Skip(wire); break;
             }
-            if (field == 1 && name is not ("building" or "transportation" or "aeroway"))
+            if (field == 1 && name is not ("building" or "transportation" or "aeroway" or "water"))
                 return;
         }
 
@@ -203,6 +270,12 @@ public static class VectorTile
                         continue;
                     result.Buildings.Add(building);
                 }
+            }
+            else if (name == "water" && type == 3 && tags.GetValueOrDefault("class") is "lake" or "river" or "ocean"
+                && tags.GetValueOrDefault("brunnel") is not "tunnel" && tags.GetValueOrDefault("intermittent") is not (double and not 0.0))
+            {
+                foreach (var area in WaterGeometry.Polygons(geometry))
+                    result.WaterAreas.Add((area, extent));
             }
             else if (name == "transportation" && type == 2 && Roads.Classify(tags) is { } road)
             {

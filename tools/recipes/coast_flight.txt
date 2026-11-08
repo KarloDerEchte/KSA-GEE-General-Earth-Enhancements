@@ -1,0 +1,82 @@
+# Coastal flight Patrick SFB -> Cocoa Beach -> Cape Canaveral: seaward frames (coast_a_NN) and along-coast frames offshore (coast_b_NN), clouds off
+load Launch_A
+waitidle 30
+clouds off
+waitidle 60
+sunel 35
+waitidle 30
+camera Free
+follow Earth
+view 28.2000 -80.6100 1500 28.2200 -80.5400 0
+waitidle 20
+shot coast_a_01
+view 28.2236 -80.6089 1500 28.2436 -80.5389 0
+wait 1.5
+shot coast_a_02
+view 28.2473 -80.6078 1500 28.2673 -80.5378 0
+wait 1.5
+shot coast_a_03
+view 28.2709 -80.6067 1500 28.2909 -80.5367 0
+wait 1.5
+shot coast_a_04
+view 28.2945 -80.6056 1500 28.3145 -80.5356 0
+wait 1.5
+shot coast_a_05
+view 28.3182 -80.6045 1500 28.3382 -80.5345 0
+wait 1.5
+shot coast_a_06
+view 28.3418 -80.6035 1500 28.3618 -80.5335 0
+wait 1.5
+shot coast_a_07
+view 28.3655 -80.6024 1500 28.3855 -80.5324 0
+wait 1.5
+shot coast_a_08
+view 28.3891 -80.6013 1500 28.4091 -80.5313 0
+wait 1.5
+shot coast_a_09
+view 28.4127 -80.6002 1500 28.4327 -80.5302 0
+wait 1.5
+shot coast_a_10
+view 28.4364 -80.5991 1500 28.4564 -80.5291 0
+wait 1.5
+shot coast_a_11
+view 28.4600 -80.5980 1500 28.4800 -80.5280 0
+wait 1.5
+shot coast_a_12
+view 28.2000 -80.5000 1800 28.2700 -80.5750 0
+waitidle 20
+shot coast_b_01
+view 28.2236 -80.4989 1800 28.2936 -80.5739 0
+wait 1.5
+shot coast_b_02
+view 28.2473 -80.4978 1800 28.3173 -80.5728 0
+wait 1.5
+shot coast_b_03
+view 28.2709 -80.4967 1800 28.3409 -80.5717 0
+wait 1.5
+shot coast_b_04
+view 28.2945 -80.4956 1800 28.3645 -80.5706 0
+wait 1.5
+shot coast_b_05
+view 28.3182 -80.4945 1800 28.3882 -80.5695 0
+wait 1.5
+shot coast_b_06
+view 28.3418 -80.4935 1800 28.4118 -80.5685 0
+wait 1.5
+shot coast_b_07
+view 28.3655 -80.4924 1800 28.4355 -80.5674 0
+wait 1.5
+shot coast_b_08
+view 28.3891 -80.4913 1800 28.4591 -80.5663 0
+wait 1.5
+shot coast_b_09
+view 28.4127 -80.4902 1800 28.4827 -80.5652 0
+wait 1.5
+shot coast_b_10
+view 28.4364 -80.4891 1800 28.5064 -80.5641 0
+wait 1.5
+shot coast_b_11
+view 28.4600 -80.4880 1800 28.5300 -80.5630 0
+wait 1.5
+shot coast_b_12
+assertnolog Exception

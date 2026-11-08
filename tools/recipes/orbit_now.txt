@@ -1,0 +1,21 @@
+# Orbit dots test: same view, clouds on then off.
+load Launch_A
+waitidle 30
+sunel 35
+waitidle 30
+camera Free
+follow Earth
+view 25 -90 12000000 25 -90 0
+waitidle 60
+shot d1_clouds_on
+clouds off
+wait 3
+shot d2_clouds_off
+clouds on
+wait 1
+view 25 -90 2500000 25 -90 0
+waitidle 40
+shot d3_2500km_on
+clouds off
+wait 3
+shot d4_2500km_off

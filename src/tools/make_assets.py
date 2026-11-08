@@ -11,6 +11,7 @@ import struct
 import zlib
 
 import facade_assets
+import furniture_assets
 import landmark_assets
 import structure_assets
 
@@ -18,14 +19,14 @@ MOD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # name, facade rgb, roof rgb, facade roughness, facade metalness
 VARIANTS = [
-    ("concrete", (178, 176, 170), (88, 88, 90), 225, 0),
-    ("plaster", (222, 218, 208), (150, 70, 50), 230, 0),
-    ("sand", (205, 185, 150), (130, 62, 45), 230, 0),
-    ("brick", (150, 80, 60), (80, 78, 78), 235, 0),
-    ("dark", (95, 98, 104), (70, 70, 72), 170, 20),
+    ("concrete", (178, 176, 170), (152, 152, 150), 225, 0),
+    ("plaster", (222, 218, 208), (166, 158, 146), 230, 0),
+    ("sand", (205, 185, 150), (122, 116, 108), 230, 0),
+    ("brick", (150, 80, 60), (96, 94, 92), 235, 0),
+    ("dark", (95, 98, 104), (104, 104, 104), 170, 20),
     ("glass", (110, 135, 160), (150, 150, 150), 80, 60),
     ("metal", (185, 190, 195), (160, 165, 170), 140, 120),
-    ("ochre", (210, 170, 100), (140, 65, 45), 230, 0),
+    ("ochre", (210, 170, 100), (142, 90, 70), 230, 0),
 ]
 
 TEX_W, TEX_H = 128, 64
@@ -111,12 +112,24 @@ ROAD_PROFILES = {
     # One carriageway of a motorway or trunk (Buildings.HighwayVariant): 2.5 m hard shoulder, two 3.75 m lanes split
     # by a dashed line (6 m dash, 10 m gap), solid edge lines and a 0.75 m strip on the left.
     "highway": ("pit lane", 11.0, [(2.5, 0.20, None), (10.25, 0.15, None), (6.25, 0.15, (6.0, 16.0))]),
+    # Estimated 3-lane one-way motorway carriageway (Buildings.Highway3Variant, Roads.Highway3Width): 2.5 m shoulder,
+    # three 3.75 m lanes, 0.75 m left strip, two dashed dividers.
+    "highway 3": ("pit lane", 14.5, [(2.5, 0.20, None), (13.75, 0.15, None), (6.25, 0.15, (6.0, 16.0)), (10.0, 0.15, (6.0, 16.0))]),
+    # Estimated 4-lane two-way road drawn as one line (Buildings.Highway4Variant, Roads.Highway4Width): 1 m edge strips,
+    # four 3.6 m lanes, dashed lane lines and a double solid centre line.
+    "highway 4": ("pit lane", 16.4, [(1.0, 0.15, None), (15.4, 0.15, None), (4.6, 0.15, (6.0, 16.0)), (11.8, 0.15, (6.0, 16.0)),
+                                     (8.0, 0.12, None), (8.4, 0.12, None)]),
     # Minor, residential, service (Buildings.StreetVariant): no markings.
     "street": ("street", 6.0, []),
     # One-lane motorway and trunk links (Buildings.RampVariant): edge lines.
     "ramp": ("pit lane", 6.0, [(0.6, 0.15, None), (5.5, 0.15, None)]),
+    # Ramp with gore hatching (Buildings.GoreVariant, RoadGore): the ramp's edge lines plus chevrons every 4 m, 0.4 m
+    # thick along the road, arms at 45 degrees. Only the part outside the carriageway shows.
+    "gore": ("pit lane", 6.0, [(0.6, 0.15, None), (5.5, 0.15, None), ("chevron", 0.4, (4.0, 1.0))]),
     # Tracks and unpaved roads (Buildings.TrackVariant).
     "track": ("dirt", 4.0, []),
+    # Solid white paint (Buildings.JunctionPaintVariant): crosswalk stripes and stop lines, thin slabs on top of the road.
+    "paint": ("road", 8.0, [(4.0, 8.6, None)]),
 }
 
 
@@ -207,6 +220,16 @@ def scanned_images(scan, width, lines):
 
     paint = np.zeros((n, n - s), dtype="float32")
     for centre, line_width, dash in lines:
+        if centre == "chevron":
+            # Gore hatching: V's pointing along the road (+u), arms trailing back to both edge lines. line_width is
+            # the thickness along the road, dash = (period, slope = metres back per metre out from the middle).
+            period, slope = dash
+            d = np.abs(across_m - width / 2)
+            at = (along_m + slope * d) % period
+            cover = np.clip((line_width / 2 - np.minimum(at, period - at)) * px_along + 0.5, 0, 1)
+            cover = cover * np.clip((width / 2 - 0.8 - d) * px_across + 0.5, 0, 1)
+            paint = np.maximum(paint, cover)
+            continue
         cover = np.clip(line_width / 2 * px_across - np.abs(across_m - centre) * px_across + 0.5, 0, 1)
         if dash:
             d, period = dash
@@ -243,9 +266,9 @@ def road_profile_images(name):
 
 # Gabled roofs (Buildings.FirstRoofVariant on in C#): name, tile rgb, gable wall rgb.
 ROOFS = [
-    ("tile red", (150, 66, 46), (214, 206, 192)),
-    ("slate", (70, 73, 80), (200, 196, 188)),
-    ("brown", (112, 76, 56), (220, 212, 196)),
+    ("tile red", (140, 82, 64), (214, 206, 192)),
+    ("slate", (92, 92, 94), (200, 196, 188)),
+    ("brown", (108, 88, 74), (220, 212, 196)),
 ]
 
 
@@ -457,7 +480,7 @@ def main():
                ("GEE_HTank", structure_assets.horizontal_tank()), ("GEE_Tent", structure_assets.tent()),
                ("GEE_CrewArm", structure_assets.crew_arm()),
                ("GEE_ScannedSlab", unit_box(up_normals=True, **scan_uv()))]
-              + landmark_assets.meshes())
+              + landmark_assets.meshes() + furniture_assets.meshes())
     write_flat_normal_bc5(os.path.join(MOD_DIR, "Textures", "GEE_Normal.ktx2"))
 
     xml = ['<?xml version="1.0" encoding="utf-8"?>',
@@ -515,6 +538,19 @@ def main():
     # Tracks and unpaved roads (Buildings.TrackVariant).
     xml += ktx_material(i, "track", road_profile_images("track"), "GEE_ScannedSlab")
     i += 1
+    # Lane-count highway variants (Buildings.Highway3Variant, Highway4Variant), after the track.
+    for profile in ("highway 3", "highway 4"):
+        xml += ktx_material(i, profile, road_profile_images(profile), "GEE_ScannedSlab")
+        i += 1
+    # Ramp surface with gore hatching (Buildings.GoreVariant), after the lane-count variants.
+    xml += ktx_material(i, "gore", road_profile_images("gore"), "GEE_ScannedSlab")
+    i += 1
+    # White paint slab for junction markings (Buildings.JunctionPaintVariant), before the furniture.
+    xml += ktx_material(i, "junction paint", road_profile_images("paint"), "GEE_ScannedSlab")
+    i += 1
+    # Roadside furniture (Buildings.FurnitureVariant: lamp, sign, gantry), after the gore variant.
+    xml += furniture_assets.write(MOD_DIR, i, landmark_assets.write_ktx2)
+    i += len(furniture_assets.MODELS)
     xml.append("</Assets>")
     with open(os.path.join(MOD_DIR, "Assets.xml"), "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(xml) + "\n")

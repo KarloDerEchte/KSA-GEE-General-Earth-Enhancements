@@ -20,6 +20,7 @@ src/tools/__pycache__/
 
 # Source scans downloaded by make_assets.py (Poly Haven, CC0)
 src/tools/data/polyhaven/
+src/tools/data/ambientcg/
 
 # Editors and OS
 .vs/

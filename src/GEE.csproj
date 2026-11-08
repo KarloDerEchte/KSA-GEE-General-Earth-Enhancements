@@ -16,6 +16,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="KSA"><HintPath>$(KsaDir)KSA.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepuPhysics"><HintPath>$(KsaDir)BepuPhysics.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="BepuUtilities"><HintPath>$(KsaDir)BepuUtilities.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Brutal.Numerics"><HintPath>$(KsaDir)Brutal.Numerics.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Brutal.Core"><HintPath>$(KsaDir)Brutal.Core.dll</HintPath><Private>false</Private></Reference>
@@ -35,6 +36,6 @@
     <Reference Include="0Harmony"><HintPath>$(StarMapDir)0Harmony.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="GeeMod.cs;Log.cs;Settings.cs;Buildings.cs;Roads.cs;VectorTile.cs;Footprint.cs;Placement.cs;Clutter.cs;ClutterClearing.cs;NightLights.cs;InstancedPass.cs;FacadeTechnique.cs;Tiles.cs;NetLoader.cs;DownloadGate.cs;BuildingRenderer.cs;Patches.cs;LightSet.cs;GlowTechnique.cs;GlowRenderer.cs;RegionalLights.cs;Landmarks.cs;AutoShot.cs;BuildingDetail.cs;Pipelines.cs;PipelineData.cs;Structures.cs;StructureData.cs;BuiltUp.cs;PublicLamps.cs;CrewArm.cs;Vapor.cs;FarField.cs;Satellite.cs;Perf.cs;ShaderPatch.cs;RoadJunctions.cs;RoadMerges.cs;RoadBridges.cs;WorldCover.cs;TreeCover.cs;ShadowCasters.cs;GroundTint.cs;TreePack.cs" />
+    <Compile Include="GroundClasses.cs;GroundDetail.cs;GroundTexture.cs;GeeMod.cs;Log.cs;Settings.cs;Buildings.cs;Roads.cs;VectorTile.cs;Footprint.cs;Placement.cs;Clutter.cs;ClutterClearing.cs;NightLights.cs;InstancedPass.cs;FacadeTechnique.cs;Tiles.cs;NetLoader.cs;DownloadGate.cs;BuildingRenderer.cs;Patches.cs;LightSet.cs;GlowTechnique.cs;GlowRenderer.cs;RegionalLights.cs;Landmarks.cs;AutoShot.cs;BuildingDetail.cs;Pipelines.cs;PipelineData.cs;Structures.cs;StructureData.cs;BuiltUp.cs;PublicLamps.cs;CrewArm.cs;Vapor.cs;FarField.cs;Satellite.cs;Perf.cs;ShaderPatch.cs;RoadJunctions.cs;JunctionMarkings.cs;RoadMerges.cs;RoadGore.cs;RoadBridges.cs;WorldCover.cs;TreeCover.cs;ShadowCasters.cs;GroundTint.cs;TreePack.cs;Scatter.cs;GrassBoost.cs;RoadCollision.cs;RoadBarriers.cs;RoadLayers.cs;PostFx.cs;RoadWear.cs;RoadWearTag.cs;Earcut.cs;WaterGeometry.cs;Water.cs;LakeOcean.cs;LakeMaskFilter.cs;ViewFilter.cs;ElevationData.cs;Elevation.cs;RiverData.cs;Rivers.cs;RoadFurniture.cs;GrassLayer.cs;FrameParallel.cs" />
   </ItemGroup>
 </Project>

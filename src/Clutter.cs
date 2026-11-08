@@ -123,6 +123,21 @@ public static class Clutter
         return QscUvToDirection(face, u, v);
     }
 
+    /// <summary>
+    /// Which of an ecotype's objects a sub-cell's instance is, as Generate.comp picks it (hash24(hashCoord).z with no
+    /// object type texture): the third hash of the sub-cell, scaled to the object count. Same arguments as InstanceDirection.
+    /// </summary>
+    public static int ObjectIndex(int cellX, int cellY, int localX, int localY, int objectCount)
+    {
+        uint cellSeed = unchecked((uint)cellX * 0x1f123bb5u ^ (uint)cellY * 0x5bd1e995u);
+        uint mixedX = unchecked((uint)localX * 17u + (uint)localY * 131u);
+        uint mixedY = unchecked((uint)localX * 269u + (uint)localY * 23u);
+        uint hx = mixedX ^ cellSeed, hy = mixedY ^ unchecked(cellSeed * 0x9e3779b9u);
+        const float inv = 1.0f / 4294967295.0f;
+        float z = Pcg32(hx ^ 0xc2b2ae35u, hy ^ 0xc2b2ae35u) * inv;      // HASH_SALT_4C
+        return (int)Math.Min((uint)(z * objectCount), (uint)(objectCount - 1));
+    }
+
     private static uint Pcg32(uint vx, uint vy)
     {
         int rot = (int)(((vx >> 28) + (vy >> 2)) & 31u);

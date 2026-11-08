@@ -68,7 +68,7 @@ public static class RoadJunctions
     }
 
     private static bool Joins(RawRoad road) =>
-        road.Airfield == Airfield.None && !road.Bridge && road.Surface != RoadSurface.Highway && road.Points.Count >= 2;
+        road.Airfield == Airfield.None && !road.Bridge && !road.Surface.IsHighway() && road.Points.Count >= 2;
 
     /// <summary>Inserts shared points where segments cross and where road ends lie on another road.</summary>
     private static void Connect(List<RawRoad> roads, List<int> joinable)

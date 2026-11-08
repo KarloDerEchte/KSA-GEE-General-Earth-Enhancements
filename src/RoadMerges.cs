@@ -33,7 +33,7 @@ public static class RoadMerges
     {
         var highwayAt = new Dictionary<(double, double), (RawRoad Road, int Index)>();
         foreach (var road in roads)
-            if (road.Surface == RoadSurface.Highway)
+            if (road.Surface.IsHighway())
                 for (int k = 0; k < road.Points.Count; k++)
                     highwayAt.TryAdd(road.Points[k], (road, k));
         if (highwayAt.Count == 0)
@@ -137,6 +137,12 @@ public static class RoadMerges
             return;
         taper.Reverse();
         r.InsertRange(0, taper);
+
+        // The taper (from its tip to the node, where the ramp is whole again) gets gore hatching.
+        double goreLength = 0;
+        for (int i = 0; i < taper.Count; i++)
+            goreLength += (r[i + 1] - r[i]).Length;
+        if (fromStart) ramp.GoreAtStart = goreLength; else ramp.GoreAtEnd = goreLength;
 
         if (!fromStart)
             r.Reverse();

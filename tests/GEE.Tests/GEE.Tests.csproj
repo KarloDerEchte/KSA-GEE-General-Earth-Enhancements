@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>GEE.Tests</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <!-- Same install the mod itself is compiled against. -->
+    <KsaDir Condition="'$(KsaDir)' == ''">C:\Program Files\Ahwoo\Games\Kitten Space Agency\</KsaDir>
+    <SrcDir>$(MSBuildThisFileDirectory)..\..\src\</SrcDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Brutal.Numerics"><HintPath>$(KsaDir)Brutal.Numerics.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+  <!-- Pure-logic mod sources, compiled in place (never copied). Anything touching the game is stubbed in Stubs/. -->
+  <ItemGroup>
+    <Compile Include="$(SrcDir)Placement.cs" Link="src\Placement.cs" />
+    <Compile Include="$(SrcDir)Footprint.cs" Link="src\Footprint.cs" />
+    <Compile Include="$(SrcDir)Earcut.cs" Link="src\Earcut.cs" />
+    <Compile Include="$(SrcDir)Buildings.cs" Link="src\Buildings.cs" />
+    <Compile Include="$(SrcDir)Roads.cs" Link="src\Roads.cs" />
+    <Compile Include="$(SrcDir)LightSet.cs" Link="src\LightSet.cs" />
+    <Compile Include="$(SrcDir)Landmarks.cs" Link="src\Landmarks.cs" />
+    <Compile Include="$(SrcDir)VectorTile.cs" Link="src\VectorTile.cs" />
+    <Compile Include="$(SrcDir)Structures.cs" Link="src\Structures.cs" />
+    <Compile Include="$(SrcDir)StructureData.cs" Link="src\StructureData.cs" />
+    <Compile Include="$(SrcDir)RoadGore.cs" Link="src\RoadGore.cs" />
+    <Compile Include="$(SrcDir)RoadBarriers.cs" Link="src\RoadBarriers.cs" />
+    <Compile Include="$(SrcDir)RoadMerges.cs" Link="src\RoadMerges.cs" />
+    <Compile Include="$(SrcDir)RoadBridges.cs" Link="src\RoadBridges.cs" />
+    <Compile Include="$(SrcDir)RoadJunctions.cs" Link="src\RoadJunctions.cs" />
+    <Compile Include="$(SrcDir)RoadLayers.cs" Link="src\RoadLayers.cs" />
+    <Compile Include="$(SrcDir)BuildingDetail.cs" Link="src/BuildingDetail.cs" />
+    <Compile Include="$(SrcDir)ElevationData.cs" Link="src/ElevationData.cs" />
+    <Compile Include="$(SrcDir)RiverData.cs" Link="src/RiverData.cs" />
+    <Compile Include="$(SrcDir)WaterGeometry.cs" Link="src/WaterGeometry.cs" />
+    <Compile Include="$(SrcDir)LakeMaskFilter.cs" Link="src/LakeMaskFilter.cs" />
+    <Compile Include="$(SrcDir)WorldCover.cs" Link="src/WorldCover.cs" />
+    <Compile Include="$(SrcDir)BuiltUp.cs" Link="src/BuiltUp.cs" />
+    <Compile Include="$(SrcDir)RoadWear.cs" Link="src/RoadWear.cs" />
+    <Compile Include="$(SrcDir)RoadWearTag.cs" Link="src/RoadWearTag.cs" />
+    <Compile Include="$(SrcDir)Clutter.cs" Link="src/Clutter.cs" />
+    <Compile Include="$(SrcDir)RoadFurniture.cs" Link="src/RoadFurniture.cs" />
+    <Compile Include="$(SrcDir)JunctionMarkings.cs" Link="src/JunctionMarkings.cs" />
+    <Compile Include="$(SrcDir)DownloadGate.cs" Link="src/DownloadGate.cs" />
+    <Compile Include="$(SrcDir)Settings.cs" Link="src/Settings.cs" />
+    <Compile Include="$(SrcDir)Pipelines.cs" Link="src\Pipelines.cs" />
+    <Compile Include="$(SrcDir)PipelineData.cs" Link="src\PipelineData.cs" />
+  </ItemGroup>
+</Project>

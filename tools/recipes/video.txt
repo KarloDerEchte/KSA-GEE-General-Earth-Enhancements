@@ -1,0 +1,9 @@
+# Frame-sequence "video": 10 frames, 1 s apart, pad at 30 deg sun. Edit the camera/simspeed lines for other motion.
+load Launch_A
+waitidle 60
+sunel 30
+waitidle 30
+camera Orbit 40 -0.4 4.6
+wait 3
+record pad_motion 10 1
+assertnolog Exception

@@ -52,21 +52,39 @@ internal static class TreePack
     {
         foreach (ClutterEcotypeReference ecotype in clutter.Ecotypes)
         {
-            int added = 0;
-            for (int n = 0; ecotype.ClutterObjects.Count < MaxObjectsPerEcotype; n++)
-            {
-                if (!ModLibrary.TryGet($"{Prefix}{ecotype.Name}_{n}", out ClutterObjectTemplate? tree) || tree == null)
-                    break;
-                // PopulatePlanetData runs again when the renderer is rebuilt; the list keeps what was added.
-                if (ecotype.ClutterObjects.Contains(tree))
-                    continue;
-                ecotype.ClutterObjects.Add(tree);
-                added++;
-            }
-            if (added == 0)
-                continue;
-            PopulateMaterials?.Invoke(ecotype, null);
-            Log.Info($"tree pack: {added} trees added to ecotype {ecotype.Name} ({ecotype.ClutterObjects.Count} objects)");
+            int added = AppendObjects(ecotype, NamesOf(ecotype));
+            if (added > 0)
+                Log.Info($"tree pack: {added} trees added to ecotype {ecotype.Name} ({ecotype.ClutterObjects.Count} objects)");
         }
+    }
+
+    private static IEnumerable<string> NamesOf(ClutterEcotypeReference ecotype)
+    {
+        for (int n = 0; ModLibrary.TryGet($"{Prefix}{ecotype.Name}_{n}", out ClutterObjectTemplate? tree) && tree != null; n++)
+            yield return $"{Prefix}{ecotype.Name}_{n}";
+    }
+
+    /// <summary>
+    /// Appends the named clutter objects (from the mod's assets) to an ecotype, up to the game's limit, and refreshes the
+    /// ecotype's material list. Returns how many were new. Also used by Scatter.
+    /// </summary>
+    public static int AppendObjects(ClutterEcotypeReference ecotype, IEnumerable<string> ids)
+    {
+        int added = 0;
+        foreach (string id in ids)
+        {
+            if (ecotype.ClutterObjects.Count >= MaxObjectsPerEcotype)
+                break;
+            if (!ModLibrary.TryGet(id, out ClutterObjectTemplate? obj) || obj == null)
+                break;
+            // PopulatePlanetData runs again when the renderer is rebuilt; the list keeps what was added.
+            if (ecotype.ClutterObjects.Contains(obj))
+                continue;
+            ecotype.ClutterObjects.Add(obj);
+            added++;
+        }
+        if (added > 0)
+            PopulateMaterials?.Invoke(ecotype, null);
+        return added;
     }
 }

@@ -1,0 +1,9 @@
+<Project>
+  <!-- Keep build output out of the mod folder: everything goes to GEE_TEST_OUT (set by run-tests.ps1) or %TEMP%\GEE.Tests. -->
+  <PropertyGroup>
+    <GeeTestOut Condition="'$(GeeTestOut)' == '' and '$(GEE_TEST_OUT)' != ''">$(GEE_TEST_OUT)\</GeeTestOut>
+    <GeeTestOut Condition="'$(GeeTestOut)' == ''">$([System.IO.Path]::GetTempPath())GEE.Tests\</GeeTestOut>
+    <BaseOutputPath>$(GeeTestOut)bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(GeeTestOut)obj\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

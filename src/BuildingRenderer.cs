@@ -48,6 +48,11 @@ internal static class BuildingRenderer
         double roadDist2 = settings.ShowRoads ? roadDist * roadDist : -1;
         // Relief pieces of buildings only show nearby; -1 hides them.
         double detailDist2 = settings.BuildingDetails ? Math.Pow(Math.Min(settings.DetailDistanceKm * 1000, maxDist), 2) : -1;
+        // Lamp posts and exit signs (RoadFurniture) are visible much further than other relief: they are tall.
+        double furnDist2 = settings.BuildingDetails && settings.RoadFurniture
+            ? Math.Pow(Math.Min(Math.Max(settings.FurnitureDistanceKm, settings.DetailDistanceKm) * 1000, maxDist), 2) : -1;
+        double Limit2(in BuildingInstance b) => b.IsRoad ? roadDist2
+            : b.IsDetail ? (b.Variant >= Buildings.FurnitureVariant ? furnDist2 : detailDist2) : maxDist2;
         int budget = settings.MaxInstances;
         int drawn = 0;
 
@@ -68,13 +73,18 @@ internal static class BuildingRenderer
         }
 
         // Nearest tiles first, so the instance cap drops the far ones.
-        var order = new (double Dist2, Tile Tile)[tiles.Length];
+        if (_orderKeys.Length < tiles.Length)
+        {
+            _orderKeys = new double[tiles.Length * 2];
+            _orderTiles = new Tile[tiles.Length * 2];
+        }
         for (int t = 0; t < tiles.Length; t++)
         {
             double3 d = tiles[t].CenterCcf - camCcf;
-            order[t] = (double3.Dot(d, d), tiles[t]);
+            _orderKeys[t] = double3.Dot(d, d);
+            _orderTiles[t] = tiles[t];
         }
-        Array.Sort(order, (x, y) => x.Dist2.CompareTo(y.Dist2));
+        Array.Sort(_orderKeys, _orderTiles, 0, tiles.Length);
 
         // Boxes smaller than about half a pixel are left out: in a city that is most of what lies kilometres away,
         // and drawing them costs time on both sides without showing anything. Where even that is more than the
@@ -84,15 +94,18 @@ internal static class BuildingRenderer
         double minSize2 = minSize * minSize;
         EnsureSelection(budget);
         // Layers switched off in the settings (roads are switched off through roadDist2).
-        bool showBuildings = settings.ShowBuildings, showComplex = settings.LaunchComplexModels;
-        bool Hidden(in BuildingInstance b) => b.Layer == Layers.LaunchComplex ? !showComplex : b.Layer == Layers.Building && !showBuildings;
+        bool showRoads = settings.ShowRoads, showBuildings = settings.ShowBuildings, showComplex = settings.LaunchComplexModels;
+        bool Hidden(in BuildingInstance b) => b.Layer == Layers.LaunchComplex ? !showComplex : b.Layer == Layers.Building && !showBuildings
+            || b.Layer == Layers.Street && !b.IsRoad && !showRoads;
 
         var selectScope = Perf.Measure("  select");
         // Tiles in reach and in view; tiles outside the view are skipped, except near ones (their lights and
         // shadows reach into the view), and a margin keeps shadows of buildings just outside it.
         Candidates.Clear();
-        foreach (var (tileDist2, tile) in order)
+        for (int o = 0; o < tiles.Length; o++)
         {
+            double tileDist2 = _orderKeys[o];
+            Tile tile = _orderTiles[o];
             double reach = maxDist + tile.RadiusM;
             if (tileDist2 > reach * reach)
                 break;
@@ -126,7 +139,7 @@ internal static class BuildingRenderer
                 ref BuildingInstance b = ref instances[i];
                 double3 d = b.Center - camCcf;
                 double dist2 = double3.Dot(d, d);
-                if (dist2 > (b.IsRoad ? roadDist2 : b.IsDetail ? detailDist2 : maxDist2) || Hidden(in b))
+                if (dist2 > Limit2(in b) || Hidden(in b))
                     continue;
                 // Point lights go to building walls and streets, not to roofs or airfield surfaces.
                 if (dist2 < lightRadius2 && (b.IsRoad ? Buildings.IsStreetSurface(b.Variant) : b.Style != Buildings.StyleNone))
@@ -139,7 +152,7 @@ internal static class BuildingRenderer
         // What each tile draws, on all cores: boxes below the pixel limit even at the tile's nearest point are
         // skipped on their size alone (a small array), so most of a distant tile is never loaded.
         double sunWindow = settings.CityGlow ? settings.GlowBrightness : 0;
-        Parallel.For(0, Candidates.Count, t =>
+        FrameParallel.For(Candidates.Count, t =>
         {
             var (tile, tileNear, count) = Candidates[t];
             BuildingInstance[] instances = tile.Instances;
@@ -165,7 +178,7 @@ internal static class BuildingRenderer
                 ref BuildingInstance b = ref instances[i];
                 double3 d = b.Center - camCcf;
                 double dist2 = double3.Dot(d, d);
-                if (dist2 > (b.IsRoad ? roadDist2 : b.IsDetail ? detailDist2 : maxDist2) || sizes[i] < minSize2 * dist2
+                if (dist2 > Limit2(in b) || sizes[i] < minSize2 * dist2
                     || Hidden(in b))
                     continue;
                 bool walls = dist2 < windowDist2 && !b.IsRoad && b.Style != Buildings.StyleNone;
@@ -241,6 +254,9 @@ internal static class BuildingRenderer
         }
     }
 
+    // Reused every frame (tiles sorted by distance); slots past the current tile count may still hold an evicted tile until overwritten.
+    private static double[] _orderKeys = new double[64];
+    private static Tile[] _orderTiles = new Tile[64];
     private static double _lodScale = 1;
     public static double LodScale => _lodScale;
 
@@ -249,6 +265,23 @@ internal static class BuildingRenderer
     private static readonly List<(Tile Tile, double NearM, int Count)> Candidates = new();
     private const double NearKeepM = 1500;
     private const double ShadowMarginM = 300;
+
+    /// <summary>
+    /// On the loader thread before a tile is published: its size table and selection buffers, so the render thread
+    /// does not allocate (and zero) tens of thousands of entries per new tile in the middle of a frame.
+    /// </summary>
+    public static void Prepare(Tile tile)
+    {
+        int count = Math.Min(tile.Count, tile.Instances.Length);
+        Sizes(tile, count);
+        int capacity = count + count / 4 + 16;
+        if (tile.SelIndex.Length < capacity)
+        {
+            tile.SelIndex = new int[capacity];
+            tile.SelWalls = new float[capacity];
+            tile.SelVariant = new int[capacity];
+        }
+    }
 
     /// <summary>The tile's squared box sizes, extended as instances are added (they are only ever appended).</summary>
     private static float[] Sizes(Tile tile, int count)
@@ -341,7 +374,7 @@ internal static class BuildingRenderer
             {
                 ref BuildingInstance b = ref _selArray[j][_selIndex[j]];
                 double pull = b.IsRoad ? Placement.FlatPull(in b, camCcf) : 1;
-                _out[_selSlot[j]] = new StaticObjectModel.PerInstanceData { ModelMatrix = Placement.ModelToEgo(in b, camCcf, rx, ry, rz, pull) };
+                _out[_selSlot[j]] = new StaticObjectModel.PerInstanceData { ModelMatrix = Placement.ModelToEgo(in b, camCcf, rx, ry, rz, pull, b.IsRoad ? RoadWear.Tag(in b) : 0f) };
                 int w = _selWallSlot[j];
                 if (w >= 0 && w < wallFits)
                     wallArray[wallStart + w] = FacadeRenderer.Make(in b, camCcf, rx, ry, rz, _selWalls[j]);
@@ -360,7 +393,7 @@ internal static class BuildingRenderer
         if (n <= Chunk)
             Work(0, n);
         else
-            Parallel.For(0, (n + Chunk - 1) / Chunk, c => Work(c * Chunk, Math.Min(n, (c + 1) * Chunk)));
+            FrameParallel.For((n + Chunk - 1) / Chunk, c => Work(c * Chunk, Math.Min(n, (c + 1) * Chunk)));
         Array.Clear(_selArray, 0, n);                                   // no references kept to dropped tiles
         if (shadows)
             using (Perf.Measure("  shadow casters"))
@@ -417,7 +450,9 @@ internal static class BuildingRenderer
 
     /// <summary>Squared length of the box's longest edge.</summary>
     private static double Size2(in BuildingInstance b) =>
-        Math.Max(double3.Dot(b.Up, b.Up), Math.Max(double3.Dot(b.AxisA, b.AxisA), double3.Dot(b.AxisB, b.AxisB)));
+        b.IsDetail && b.Variant >= Buildings.FurnitureVariant
+            ? RoadFurniture.Extent2(b.Variant - Buildings.FurnitureVariant)
+            : Math.Max(double3.Dot(b.Up, b.Up), Math.Max(double3.Dot(b.AxisA, b.AxisA), double3.Dot(b.AxisB, b.AxisB)));
 
     private static double3 Rotate(double3 v, double3 rx, double3 ry, double3 rz) => rx * v.X + ry * v.Y + rz * v.Z;
 

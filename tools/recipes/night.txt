@@ -1,0 +1,12 @@
+# Night side of the pad area. sunel with a negative angle is assumed to work (unverified).
+load Launch_A
+waitidle 60
+sunel -20
+waitidle 30
+camera Orbit 0 -0.4 4.6
+wait 2
+shot night_pad
+camera Orbit 200 -0.5 9
+wait 2
+shot night_wide
+assertnolog Exception

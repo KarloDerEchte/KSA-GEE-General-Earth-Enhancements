@@ -13,6 +13,7 @@ internal static class Patches
     {
         // First, so the game's shaders are still to be compiled.
         ShaderPatch.Apply(harmony);
+        LakeOcean.Apply(harmony);
         harmony.Patch(
             AccessTools.Method(typeof(Celestial), nameof(Celestial.UpdateRenderData), new[] { typeof(IViewport), typeof(int) }),
             postfix: new HarmonyMethod(typeof(Patches), nameof(AfterCelestialRenderData)));
@@ -60,10 +61,21 @@ internal static class Patches
         try
         {
             TreePack.Apply(harmony);
+            Scatter.Apply(harmony);
         }
         catch (Exception e)
         {
             Log.Error($"tree pack patch failed: {e.Message}");
+        }
+
+        // Optional: without it the grass keeps the game's density and range.
+        try
+        {
+            GrassBoost.Apply(harmony);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"grass boost patch failed: {e.Message}");
         }
 
         // Optional: without it tree colliders already loaded around vessels stay until their cell reloads.
@@ -77,7 +89,51 @@ internal static class Patches
         {
             Log.Error($"clutter exclusion patch failed: {e.Message}");
         }
+
+        // Optional: without it roads have no collision.
+        try
+        {
+            harmony.Patch(
+                AccessTools.Method(typeof(PhysicsBubble), nameof(PhysicsBubble.SyncGroundClutterStatics)),
+                postfix: new HarmonyMethod(typeof(Patches), nameof(AfterBubbleSync)));
+            harmony.Patch(
+                AccessTools.Method(typeof(PhysicsBubble), "UpdateBepuStatesForSnappedOrigin"),
+                postfix: new HarmonyMethod(typeof(Patches), nameof(AfterBubbleSnap)));
+            harmony.Patch(
+                AccessTools.Method(typeof(ConstraintSim), nameof(ConstraintSim.TryResetForPool)),
+                prefix: new HarmonyMethod(typeof(Patches), nameof(BeforeSimReset)));
+        }
+        catch (Exception e)
+        {
+            Log.Error($"road collision patch failed: {e.Message}");
+        }
     }
+
+    private static void AfterBubbleSync(PhysicsBubble __instance)
+    {
+        try
+        {
+            RoadCollision.Sync(__instance);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"road collision failed: {e}");
+        }
+    }
+
+    private static void AfterBubbleSnap(PhysicsBubble __instance)
+    {
+        try
+        {
+            RoadCollision.Redescribe(__instance);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"road collision snap failed: {e}");
+        }
+    }
+
+    private static void BeforeSimReset(ConstraintSim __instance) => RoadCollision.SimReset(__instance);
 
     private static void BeforeEndCascade(KSA.Rendering.Lighting.CascadedShadowSystem __instance, CommandBuffer inCmdBuffer, int inCascade)
     {
@@ -127,6 +183,7 @@ internal static class Patches
                 FacadeRenderer.Draw(commandBuffer, viewport, frameIndex);
             using (Perf.Measure("satellite"))
                 SatelliteImagery.Draw(commandBuffer, viewport, frameIndex);
+            GrassLayer.Draw(commandBuffer, viewport, frameIndex);
             using (Perf.Measure("vapour"))
                 VaporRenderer.Draw(commandBuffer, viewport, frameIndex);
             using (Perf.Measure("glow"))
@@ -147,6 +204,7 @@ internal static class Patches
             FacadeRenderer.RebuildFrameResources();
             ShadowCasters.Dispose();
             VaporRenderer.RebuildFrameResources();
+            GrassLayer.RebuildFrameResources();
             SatelliteImagery.RebuildFrameResources();
             GlowRenderer.RebuildFrameResources();
         }

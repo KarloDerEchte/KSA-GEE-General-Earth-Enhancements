@@ -26,6 +26,8 @@ internal static class ShaderPatch
     private const string ShaderFile = "StaticObject.frag";
     private const string Anchor = "    vec3 V = normalize(-inWorldPosition);";
     private const string SunShadow = "getSunShadowFiltered(terrainShadowUbo, inWorldPosition, geometricNormal)";
+    private const string DiffuseFetch = "    vec3 sampledColor = gammaToLinear(texture(sampler2D(globalTextures[drawData.diffuseTextureIndex], textureSampler), inUv).xyz);\n";
+    private const string PbrFetch = "    vec3 sampledPbr = texture(sampler2D(globalTextures[drawData.pbrTextureIndex], textureSampler), inUv).xyz;\n";
     private const string Cascaded = "GetCascadedShadow(inWorldPosition, geometricNormal, dotNL, viewDepth)";
 
     public static bool Patched { get; private set; }
@@ -68,6 +70,18 @@ internal static class ShaderPatch
         byte[] bytes = File.ReadAllBytes(path);
         if (path.Replace('\\', '/').EndsWith("Planet/Planet.frag", StringComparison.OrdinalIgnoreCase))
             return PatchPlanet(path, bytes);
+        if (path.Replace('\\', '/').Contains("Planet/GroundClutter/", StringComparison.OrdinalIgnoreCase))
+            return PatchClutter(path, GrassBoost.PatchShader(path, bytes));
+        if (path.Replace('\\', '/').EndsWith("Planet/TerrainMesh/PrepareModifiers.comp", StringComparison.OrdinalIgnoreCase))
+            return PatchRealElevation(path, bytes);
+        if (path.Replace('\\', '/').EndsWith("Planet/TerrainMesh/FinalizeModifiers.comp", StringComparison.OrdinalIgnoreCase))
+            return PatchLakeBeds(path, bytes);
+        if (path.Replace('\\', '/').EndsWith("Water/Ocean.frag", StringComparison.OrdinalIgnoreCase))
+            return PatchOcean(path, bytes);
+        if (path.Replace('\\', '/').EndsWith("PostProcess/composite.frag", StringComparison.OrdinalIgnoreCase))
+            return PatchComposite(path, bytes);
+        if (path.Replace('\\', '/').EndsWith("Mesh/StaticObject.vert", StringComparison.OrdinalIgnoreCase))
+            return RoadWear.PatchVertex(Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n")) is { } wearVert ? Encoding.UTF8.GetBytes(wearVert) : bytes;
         if (!path.EndsWith(ShaderFile, StringComparison.OrdinalIgnoreCase))
             return bytes;
         try
@@ -81,12 +95,21 @@ internal static class ShaderPatch
                 return bytes;
             }
             var inv = System.Globalization.CultureInfo.InvariantCulture;
+            // The marker test reads the alphas of the very texels the shader fetches anyway: fetch them once (vec4)
+            // and reuse them, so unmarked pixels (vessels, buildings) pay no extra texture reads. Falls back to
+            // fetching again if the game's two lines have changed.
+            bool shared = source.Contains(DiffuseFetch) && source.Contains(PbrFetch);
+            string diffuseAlpha = shared ? "geeDiffuse.a" : "texture(sampler2D(globalTextures[drawData.diffuseTextureIndex], textureSampler), inUv).a";
+            string pbrAlpha = shared ? "geePbr.a" : "texture(sampler2D(globalTextures[drawData.pbrTextureIndex], textureSampler), inUv).a";
+            if (shared)
+                source = source.Replace(DiffuseFetch, "    vec4 geeDiffuse = texture(sampler2D(globalTextures[drawData.diffuseTextureIndex], textureSampler), inUv);\n    vec3 sampledColor = gammaToLinear(geeDiffuse.xyz);\n")
+                    .Replace(PbrFetch, "    vec4 geePbr = texture(sampler2D(globalTextures[drawData.pbrTextureIndex], textureSampler), inUv);\n    vec3 sampledPbr = geePbr.xyz;\n");
             string lift = $$"""
                     // GEE: shadow lookup above the mod's ground surfaces (GEE ShaderPatch.cs).
                     float geeShadowLift = 0.0;
                 #ifndef SAMPLE_TERRAIN
-                    if (abs(texture(sampler2D(globalTextures[drawData.diffuseTextureIndex], textureSampler), inUv).a - {{(DiffuseMarker / 255.0).ToString("0.0000", inv)}}) < 0.03
-                        && abs(texture(sampler2D(globalTextures[drawData.pbrTextureIndex], textureSampler), inUv).a - {{(PbrMarker / 255.0).ToString("0.0000", inv)}}) < 0.03)
+                    if (abs({{diffuseAlpha}} - {{(DiffuseMarker / 255.0).ToString("0.0000", inv)}}) < 0.03
+                        && abs({{pbrAlpha}} - {{(PbrMarker / 255.0).ToString("0.0000", inv)}}) < 0.03)
                     {
                         geeShadowLift = {{LiftMeters.ToString("0.0##", inv)}} + {{(LiftPerKm / 1000).ToString("0.0#####", inv)}} * length(inWorldPosition);
                         N = geometricNormal;
@@ -98,6 +121,7 @@ internal static class ShaderPatch
             source = source.Replace(Anchor + "\n", lift + Anchor + "\n")
                 .Replace(SunShadow, SunShadow.Replace("inWorldPosition", "geeShadowPos"))
                 .Replace(Cascaded, Cascaded.Replace("inWorldPosition", "geeShadowPos"));
+            source = RoadWear.PatchFragment(source) ?? source;
             Patched = true;
             Log.Notice($"shader patch: {path} patched");
             return Encoding.UTF8.GetBytes(source);
@@ -109,26 +133,133 @@ internal static class ShaderPatch
         }
     }
 
+    /// <summary>The ground clutter shaders that place clutter on the terrain with the lake cut and the real elevation (LakeOcean.PatchClutter).</summary>
+    private static byte[] PatchClutter(string path, byte[] bytes)
+    {
+        string name = Path.GetFileName(path);
+        try
+        {
+            if (LakeOcean.PatchClutter(name, Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n")) is not { } patched)
+                return bytes;
+            Log.Notice($"shader patch: {name} patched (clutter follows the terrain)");
+            return Encoding.UTF8.GetBytes(patched);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"shader patch (clutter, {name}): {e.Message}");
+            return bytes;
+        }
+    }
+
+    /// <summary>The terrain base-height shader with the real elevation (Elevation), if it is switched on.</summary>
+    private static byte[] PatchRealElevation(string path, byte[] bytes)
+    {
+        try
+        {
+            if (LakeOcean.PatchPrepare(Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n")) is not { } patched)
+            {
+                Log.Notice($"shader patch: {path} not patched (real terrain off or the game's shader has changed)");
+                return bytes;
+            }
+            Log.Notice($"shader patch: {path} patched (real elevation)");
+            return Encoding.UTF8.GetBytes(patched);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"shader patch (real elevation): {e.Message}");
+            return bytes;
+        }
+    }
+
+    /// <summary>The terrain mesh shader with the lake beds (LakeOcean), if water is switched on.</summary>
+    private static byte[] PatchLakeBeds(string path, byte[] bytes)
+    {
+        try
+        {
+            if (LakeOcean.PatchTerrain(Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n")) is not { } patched)
+            {
+                Log.Notice($"shader patch: {path} not patched (water off or the game's shader has changed)");
+                return bytes;
+            }
+            Log.Notice($"shader patch: {path} patched (lake beds)");
+            return Encoding.UTF8.GetBytes(patched);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"shader patch (lake beds): {e.Message}");
+            return bytes;
+        }
+    }
+
+    /// <summary>The ocean shader with the lake pass (LakeOcean), if water is switched on.</summary>
+    private static byte[] PatchOcean(string path, byte[] bytes)
+    {
+        try
+        {
+            if (LakeOcean.PatchOcean(Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n")) is not { } patched)
+            {
+                Log.Notice($"shader patch: {path} not patched (water off or the game's shader has changed)");
+                return bytes;
+            }
+            Log.Notice($"shader patch: {path} patched (lakes, reflections {(LakeOcean.Settings?.WaterReflections == true ? "on" : "off")})");
+            return Encoding.UTF8.GetBytes(patched);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"shader patch (lakes): {e.Message}");
+            return bytes;
+        }
+    }
+
+    /// <summary>The composite shader with the colour grade (PostFx), if it is switched on.</summary>
+    private static byte[] PatchComposite(string path, byte[] bytes)
+    {
+        try
+        {
+            if (PostFx.Patch(Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n")) is not { } patched)
+                return bytes;
+            Log.Notice($"shader patch: {path} patched (colour grade)");
+            return Encoding.UTF8.GetBytes(patched);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"shader patch (colour grade): {e.Message}");
+            return bytes;
+        }
+    }
+
     /// <summary>The terrain shader with the satellite ground colour (GroundTint), if it is switched on.</summary>
     private static byte[] PatchPlanet(string path, byte[] bytes)
     {
         try
         {
-            if (SatelliteImagery.Settings is not { Enabled: true, GroundColorFromSatellite: true } || !GroundTint.Reserve())
-                return bytes;
             string source = Encoding.UTF8.GetString(bytes).Replace("\r\n", "\n");
-            if (GroundTint.PatchPlanet(source) is not { } patched)
+            bool changed = false;
+            if (SatelliteImagery.Settings is { Enabled: true, GroundColorFromSatellite: true } && GroundTint.Reserve())
             {
-                Log.Error($"shader patch: {path} has changed, the ground keeps the game's colours");
-                GroundTint.Fail("the game's terrain shader has changed");
-                return bytes;
+                if (GroundTint.PatchPlanet(source) is { } tinted)
+                {
+                    source = tinted;
+                    changed = true;
+                    Log.Notice($"shader patch: {path} patched (ground colour)");
+                }
+                else
+                {
+                    Log.Error($"shader patch: {path} has changed, the ground keeps the game's colours");
+                    GroundTint.Fail("the game's terrain shader has changed");
+                }
             }
-            Log.Notice($"shader patch: {path} patched (ground colour)");
-            return Encoding.UTF8.GetBytes(patched);
+            if (LakeOcean.PatchPlanetShore(source) is { } shores)
+            {
+                source = shores;
+                changed = true;
+                Log.Notice($"shader patch: {path} patched (lake shores)");
+            }
+            return changed ? Encoding.UTF8.GetBytes(source) : bytes;
         }
         catch (Exception e)
         {
-            Log.Error($"shader patch (ground colour): {e.Message}");
+            Log.Error($"shader patch (terrain colour): {e.Message}");
             return bytes;
         }
     }

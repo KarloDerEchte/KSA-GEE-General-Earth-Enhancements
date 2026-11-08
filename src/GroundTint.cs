@@ -106,9 +106,17 @@ internal static class GroundTint
     /// Fills the table again if the loaded layers (version), the camera's tile or the strength changed; true if its
     /// contents then differ from what the GPU has. layer(z, x, y) gives a loaded tile's layer or -1.
     /// </summary>
-    public static bool Build(double camLat, double camLon, double planetRadius, Settings settings, long version, Func<int, int, int, int> layer)
+    public static bool Build(double camLat, double camLon, double planetRadius, double altitude, Settings settings, long version, Func<int, int, int, int> layer)
     {
         float strength = _failed ? 0 : (float)Math.Clamp(settings.GroundColorStrength, 0, 1);
+        // With GroundTintFadeStartKm > 0 (0 = off, the default: colour at every height) from GroundTintFadeStartKm down to GroundTintFadeEndKm the ground colour fades in (smoothstep); above the start the planet
+        // shows the game's own imagery. Quantised, so the table is not rebuilt for every metre of altitude.
+        if (settings.GroundTintFadeStartKm > 0)
+        {
+            double fadeStart = Math.Max(settings.GroundTintFadeStartKm, 0.01) * 1000, fadeEnd = Math.Clamp(settings.GroundTintFadeEndKm, 0, settings.GroundTintFadeStartKm - 0.01) * 1000;
+            double u = Math.Clamp((fadeStart - altitude) / Math.Max(fadeStart - fadeEnd, 1), 0, 1);
+            strength *= (float)(Math.Round(u * u * (3 - 2 * u) * 64) / 64);
+        }
         var (cx, cy) = CameraTile(camLat, camLon, TopZoom);
         var key = (version, cx, cy, strength);
         if (key == _builtFor)
@@ -238,22 +246,40 @@ internal static class GroundTint
     private const string IncludeAnchor = "#include \"../Common/RingShadows.glsl\"\n";
     private const string SurfaceAnchor = "    vec3 surfaceColor = blendedDiffuse.xyz;\n";
 
+    /// <summary>The helper functions with the bindless handles and the colour correction constants baked in (also used by GrassBoost.cs).</summary>
+    internal static string BakedFunctions()
+    {
+        var s = SatelliteImagery.Settings;
+        string F(double v, double lo, double hi) => Math.Clamp(v, lo, hi).ToString("0.0####", System.Globalization.CultureInfo.InvariantCulture);
+        return Functions.Replace("GEE_SAT_HANDLE", SatelliteHandle.ToString()).Replace("GEE_TABLE_HANDLE", TableHandle.ToString())
+            .Replace("GEE_GAMMA", F(s?.GroundColorGamma ?? 1, 0.5, 2))
+            .Replace("GEE_WARMTH", F(s?.GroundColorWarmth ?? 1, 0, 3))
+            .Replace("GEE_BARE", F(s?.GroundColorBareWarmth ?? 0.85, 0, 3))
+            .Replace("GEE_VEG", F(s?.GroundColorVegetationWarmth ?? 1.15, 0, 3))
+            .Replace("GEE_SATURATION", F(s?.GroundColorSaturation ?? 0.85, 0, 2))
+            .Replace("GEE_BRIGHTV", F(s?.GroundBrightnessFromSatellite ?? 0.3, 0, 1));
+    }
+
     /// <summary>The shader text with our code, or null if the game's shader has changed.</summary>
     public static string? PatchPlanet(string source)
     {
         foreach (string anchor in new[] { IncludeAnchor, SurfaceAnchor })
             if (source.Split(anchor).Length != 2)
                 return null;
-        string functions = Functions.Replace("GEE_SAT_HANDLE", SatelliteHandle.ToString()).Replace("GEE_TABLE_HANDLE", TableHandle.ToString());
-        return source
+        string functions = BakedFunctions();
+        string tinted = source
             .Replace(IncludeAnchor, IncludeAnchor + functions)
             .Replace(SurfaceAnchor, SurfaceCode + SurfaceAnchor);
+        tinted = GroundDetail.Patch(tinted) ?? tinted; // GroundDetail.cs: non-tiling detail, macro variation, slope materials
+        tinted = GroundClasses.Patch(tinted) ?? tinted;  // GroundClasses.cs: land cover (rows, grain, pools), after the other ground code
+        return GroundTexture.Patch(tinted) ?? tinted;    // GroundTexture.cs: photographed grass/dirt/rock detail, last
     }
 
     private const string Functions = """
 
         // ---- GEE: satellite colour (mods/GEE GroundTint.cs) ----
         const int GEE_SAT = GEE_SAT_HANDLE, GEE_TABLE = GEE_TABLE_HANDLE;
+        const float GEE_BRIGHTK = GEE_BRIGHTV;
 
         vec4 geeTexel(int x, int y)
         {
@@ -274,9 +300,19 @@ internal static class GroundTint
             vec2 uv = e.yz + clamp(rel - vec2(cell), 0.0, 1.0) * e.w;
             vec3 rgb = textureLod(sampler2DArray(globalTextureArrays[GEE_SAT], GLOBAL_CLAMP_SAMPLER), vec3(uv, max(e.x, 0.0)), 0.0).rgb;
             // The imagery is graded cool (vegetation comes out blue-green); warmed and a little desaturated it
-            // matches the game's grass.
-            vec3 linear = pow(rgb, vec3(2.2)) * vec3(1.25, 1.0, 0.6);
-            linear = mix(linear, vec3(dot(linear, vec3(0.2126, 0.7152, 0.0722))), 0.15);
+            // matches the game's grass. The correction depends on the colour: green pixels are warmed most (towards
+            // the game's yellow-green), brown bare ground less (already warm), bright pixels (sand, concrete,
+            // haze) are warmed less and desaturated more. Constants are baked from Settings.GroundColor*.
+            vec3 linear = pow(rgb, vec3(2.2 * GEE_GAMMA));
+            const vec3 geeW = vec3(0.2126, 0.7152, 0.0722);
+            float geeL = max(dot(linear, geeW), 1e-4);
+            vec3 geeC = linear / geeL;
+            float geeVeg = smoothstep(0.1, 0.5, geeC.g - 0.5 * (geeC.r + geeC.b));
+            float geeBright = smoothstep(0.35, 0.7, geeL);
+            float geeWarm = GEE_WARMTH * mix(GEE_BARE, GEE_VEG, geeVeg) * (1.0 - 0.5 * geeBright);
+            linear *= pow(vec3(1.25, 1.0, 0.6), vec3(geeWarm));
+            float geeSat = clamp(GEE_SATURATION * (1.0 - 0.3 * geeBright), 0.0, 2.0);
+            linear = mix(vec3(dot(linear, geeW)), linear, geeSat);
             return vec4(linear, e.x >= 0.0 ? 1.0 : 0.0);
         }
         // ---- end GEE ----
@@ -316,8 +352,11 @@ internal static class GroundTint
                         geeHue /= max(1.0, max(geeHue.r, max(geeHue.g, geeHue.b)) / 2.5);
                         // Brighter than the surroundings by at most about 2.5 times, approached softly.
                         float geeRatio = geeFineLum / geeRef;
+                        geeRatio = pow(max(geeRatio, 1e-3), GEE_BRIGHTK);
                         geeRatio = geeRatio < 1.0 ? max(geeRatio, 0.3) : 1.0 + 1.5 * (1.0 - exp(-(geeRatio - 1.0) / 1.5));
-                        blendedDiffuse = mix(blendedDiffuse, geeHue * geeRatio * dot(blendedDiffuse, geeLum), geeHead.y);
+                        // Under the sea the photo shows the water, not the seabed: the game's own colour stays (its shelf shading).
+                        float geeDry = smoothstep(-2.5, 0.3, length(sphereVector) - global.lighting.planetRadius - uboPlanet.oceanLevel);
+                        blendedDiffuse = mix(blendedDiffuse, geeHue * geeRatio * dot(blendedDiffuse, geeLum), geeHead.y * geeDry);
                     }
                 }
             }

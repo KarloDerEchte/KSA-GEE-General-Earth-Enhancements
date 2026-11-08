@@ -1,0 +1,15 @@
+# Ground stutter test: hop the camera over fresh ground at 60 m, no idle waits, read "perf worst single frame" in the log.
+load Launch_A
+waitidle 60
+camera Free
+follow Earth
+view 28.5 -80.65 60 28.5 -80.60 0
+wait 15
+view 28.40 -80.80 60 28.40 -80.75 0
+wait 10
+view 28.55 -80.90 60 28.55 -80.85 0
+wait 10
+view 28.70 -80.70 60 28.70 -80.65 0
+wait 10
+view 28.30 -80.55 60 28.30 -80.50 0
+wait 10

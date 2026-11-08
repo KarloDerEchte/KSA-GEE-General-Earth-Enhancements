@@ -30,6 +30,11 @@ internal sealed class TreeCover
     /// <summary>Cells already sorted (worker thread only).</summary>
     private readonly HashSet<ClutterCellKey> _done = new();
     private int _doneGeneration = -1;
+    /// <summary>The camera direction (and grids) of the last pass that found nothing left to sort, and how far the camera may move before it looks again.</summary>
+    private double3 _idleDir;
+    private ClutterGrid[]? _idleGrids;
+    private int _idleGeneration = -1;
+    private double _idleSlackMeters;
     private volatile Request? _request;
     private Thread? _worker;
     private int _cells, _removed;
@@ -149,7 +154,19 @@ internal sealed class TreeCover
             _doneGeneration = request.Generation;
         }
         if (_done.Count > 2_000_000)
+        {
             _done.Clear();
+            _idleGrids = null;
+        }
+        // Everything around the camera was sorted and the camera has hardly moved since: no cell can have come into range, so the
+        // (large: thousands of positions per ecotype) enumeration of the cells around the camera is not repeated every 300 ms.
+        if (_idleGrids != null && ReferenceEquals(_idleGrids, request.Grids) && _idleGeneration == request.Generation)
+        {
+            double moved = Math.Acos(Math.Clamp(double3.Dot(_idleDir, request.Dir), -1, 1)) * request.PlanetRadius;
+            if (moved < _idleSlackMeters)
+                return false;
+        }
+        _idleGrids = null;
 
         var todo = new List<(ClutterCellKey Key, double Dist)>();
         for (int e = 0; e < request.Grids.Length; e++)
@@ -160,27 +177,43 @@ internal sealed class TreeCover
         if (todo.Count == 0)
         {
             _status = $"up to date, {_cover.BlocksLoaded} land cover blocks";
+            double smallest = double.MaxValue;
+            for (int e = 0; e < request.Grids.Length; e++)
+                if (request.Kinds[e] != Kind.None)
+                    smallest = Math.Min(smallest, Math.PI / 2 * request.PlanetRadius / request.Grids[e].Resolution);
+            _idleSlackMeters = smallest / 4;
+            _idleDir = request.Dir;
+            _idleGeneration = request.Generation;
+            _idleGrids = request.Grids;
             return false;
         }
         todo.Sort((a, b) => a.Dist.CompareTo(b.Dist));
 
         long deadline = Stopwatch.GetTimestamp() + (long)(PassMs * Stopwatch.Frequency / 1000);
         _status = $"sorting, {todo.Count} cells to go";
+        int waiting = 0;
         foreach (var (key, _) in todo)
         {
             if (Stopwatch.GetTimestamp() > deadline)
                 break;
-            if (!Sort(request, key))
+            SortResult result = Sort(request, key);
+            if (result == SortResult.Failed)
             {
                 // Land cover could not be fetched: try again later rather than keep the game's trees for good.
                 _status = "land cover download failed, retrying";
                 Thread.Sleep(2000);
                 return true;
             }
+            if (result == SortResult.Waiting)
+            {
+                waiting++;                                                 // the lake map is not there yet: not done
+                continue;
+            }
             _done.Add(key);
             _cells++;
         }
-        return true;
+        // Only cells waiting for the lake map are left: sleep a while instead of asking again at once.
+        return waiting < todo.Count;
     }
 
     /// <summary>Unsorted cells of one ecotype grid within its generation range of the camera's ground point.</summary>
@@ -188,7 +221,10 @@ internal sealed class TreeCover
     {
         int res = request.Grids[ecotype].Resolution;
         double R = request.PlanetRadius, cell = Math.PI / 2 * R / res;
-        double range = request.Ranges[ecotype] + cell;
+        // Sort ahead of the game's own range: a cell the game loads before its mask is queued shows all its trees
+        // (and their shadows) for a few frames and then loses most of them, which looks like flicker while moving.
+        double lead = Math.Max(cell, Math.Min(0.3 * request.Ranges[ecotype], 1500));
+        double range = request.Ranges[ecotype] + cell + lead;
         double step = cell / 2;
         int n = (int)Math.Ceiling(range / step);
         Placement.Axes(request.Dir, out double3 east, out double3 north);
@@ -211,9 +247,21 @@ internal sealed class TreeCover
     }
 
     /// <summary>Classifies the 256 instances of one cell and queues the ones to remove. False if land cover is missing.</summary>
-    private bool Sort(Request request, ClutterCellKey key)
+    private enum SortResult { Done, Failed, Waiting }
+
+    /// <summary>The game's terrain height at a direction (set by the mod each frame; the game's query is thread-safe).</summary>
+    public static Func<double3, double>? Ground;
+
+    /// <summary>
+    /// Plants within this distance of a lake are checked against the terrain the lake patch makes: it eases the bank down over
+    /// this width, and the game puts its plants on the heightmap, not on the patched mesh, so they would float where it was cut.
+    /// </summary>
+    private const double LakeClearMeters = LakeOcean.BankMeters;
+
+    private SortResult Sort(Request request, ClutterCellKey key)
     {
         Kind kind = request.Kinds[key.Ecotype];
+        ScatterKind?[]? scatter = Scatter.KindsFor(key.Ecotype);
         int res = request.Grids[key.Ecotype].Resolution;
         uint[]? mask = null;
         int removed = 0;
@@ -223,17 +271,47 @@ internal sealed class TreeCover
             {
                 double3 d = Clutter.InstanceDirection(key.Face, key.X, key.Y, localX, localY, res);
                 double lat = Math.Asin(Math.Clamp(d.Z, -1, 1)) * 180 / Math.PI, lon = Math.Atan2(d.Y, d.X) * 180 / Math.PI;
+                // Lakes of the lake map (LakeOcean) have no plants, whatever the land cover says.
+                if (LakeOcean.Query(lat, lon, out double lakeMeters) == 0)
+                    return SortResult.Waiting;
+                int bit = localY * Clutter.Edge + localX;
+                if (lakeMeters > -LakeClearMeters)
+                {
+                    // In a lake always; on its bank only where the terrain was cut down by more than about a plant's own
+                    // height of ground (the plant would float there). Elsewhere the shore keeps its trees, shrubs and grass.
+                    bool remove = lakeMeters > 0;
+                    if (!remove && Ground is { } ground)
+                    {
+                        double original = ground(d);
+                        remove = original - LakeOcean.AdjustHeight(lat, lon, original) > 0.7;
+                    }
+                    if (remove)
+                    {
+                        mask ??= new uint[Clutter.Edge * Clutter.Edge / 32];
+                        mask[bit >> 5] |= 1u << (bit & 31);
+                        removed++;
+                        continue;
+                    }
+                }
                 byte? landCover = _cover.ClassAt(lat, lon);
                 if (landCover == null)
                 {
                     _status = "loading land cover";
                     if (!_cover.Load(lat, lon))
-                        return false;
+                        return SortResult.Failed;
                     landCover = _cover.ClassAt(lat, lon);
                 }
-                int bit = localY * Clutter.Edge + localX;
                 // Unknown (a block dropped from memory meanwhile): leave the game's instance.
-                if (landCover is not { } known || Hash01(key, bit) < Keep(kind, known))
+                if (landCover is not { } known)
+                    continue;
+                double roll = Hash01(key, bit);
+                // Scatter objects (rocks, flowers, ...) mixed into the ecotype follow their own rules.
+                if (scatter != null && scatter[Clutter.ObjectIndex(key.X, key.Y, localX, localY, scatter.Length)] is { } scatterKind)
+                {
+                    if (Scatter.Keeps(scatterKind, known, roll, d, lat, lon, _cover.ClassAt, Ground))
+                        continue;
+                }
+                else if (roll < Keep(kind, known))
                     continue;
                 mask ??= new uint[Clutter.Edge * Clutter.Edge / 32];
                 mask[bit >> 5] |= 1u << (bit & 31);
@@ -245,7 +323,7 @@ internal sealed class TreeCover
             _masks.Enqueue((key, mask));
             Interlocked.Add(ref _removed, removed);
         }
-        return true;
+        return SortResult.Done;
     }
 
     /// <summary>A fixed random number in [0, 1) per instance, so the same lone trees stay every time.</summary>

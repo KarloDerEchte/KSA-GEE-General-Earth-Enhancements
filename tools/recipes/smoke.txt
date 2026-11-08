@@ -1,0 +1,6 @@
+# smoke: load, idle, one shot, no errors in log
+load Launch_A
+waitidle 60
+shot smoke
+assertnolog Exception
+assertnolog NullReference

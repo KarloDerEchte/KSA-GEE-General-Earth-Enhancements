@@ -1,0 +1,14 @@
+# Satellite drape heights over the Altiplano, ~600 km. ALT unit of "view" assumed metres (unverified).
+load Launch_A
+waitidle 60
+camera Free
+follow Earth
+view -19.5 -67.5 600000 -19.5 -67.5 0
+waitidle 60
+waitlog satellite heights 60
+shot andes_600km
+view -16.5 -68.5 600000 -16.5 -68.5 0
+waitidle 40
+shot andes_titicaca
+assertlog satellite heights
+assertnolog Exception

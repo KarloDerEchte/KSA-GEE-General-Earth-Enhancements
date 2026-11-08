@@ -1,0 +1,12 @@
+load Launch_A
+waitidle 60
+clouds off
+camera Free
+follow Earth
+view 25.30 -79.70 9000 25.70 -80.0 0
+waitidle 90
+wait 10
+shot m1_9km
+view 25.30 -79.70 16000 25.70 -80.0 0
+wait 15
+shot m2_16km

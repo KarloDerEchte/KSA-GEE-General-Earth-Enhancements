@@ -1,0 +1,21 @@
+# LC-39A at 30 deg sun, orbit camera (negative elevation = above, looking down). Pad is the load spawn.
+load Launch_A
+waitidle 60
+sunel 30
+waitidle 30
+camera Orbit 0 -0.4 4.6
+wait 2
+shot pad_az0
+camera Orbit 90 -0.4 4.6
+wait 2
+shot pad_az90
+camera Orbit 180 -0.4 4.6
+wait 2
+shot pad_az180
+camera Orbit 270 -0.4 4.6
+wait 2
+shot pad_az270
+camera Orbit 45 -0.8 6.5
+wait 2
+shot pad_high
+assertnolog Exception

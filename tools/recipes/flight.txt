@@ -1,0 +1,66 @@
+# Fly-around video: free camera waypoints at changing altitude/places, a screenshot at each.
+load Launch_A
+waitidle 30
+log clouds off
+clouds off
+waitidle 60
+sunel 35
+waitidle 30
+camera Free
+follow Earth
+# KSC low, sweeping north along the coast to Cocoa
+view 28.55 -80.60 300 28.62 -80.60 0
+waitidle 30
+shot f01_ksc_low
+view 28.52 -80.64 800 28.65 -80.64 0
+wait 2
+shot f02_ksc_800
+view 28.30 -80.74 1500 28.42 -80.74 0
+wait 2
+shot f03_cocoa_1500
+view 28.34 -80.76 400 28.40 -80.76 0
+wait 3
+shot f04_i95_400
+# Orlando city
+view 28.45 -81.40 3000 28.55 -81.40 0
+waitidle 40
+shot f05_orlando_3k
+view 28.50 -81.38 800 28.54 -81.38 100
+waitidle 30
+shot f06_orlando_low
+# Houston, oblique
+view 29.60 -95.4 6000 29.76 -95.37 0
+waitidle 40
+shot f07_houston_6k
+# Lake Tahoe (US west; still lit at the KSC sun time)
+view 38.8 -120.0 5000 39.0 -120.0 1900
+waitidle 40
+shot f09_tahoe
+# Europe is on the night side at this time: warp until the sun is up there (35 deg is out of reach at 47N in November)
+view 46.4 8.5 5000 46.55 8.9 1500
+sunel 20
+waitlog target 20.0): reached 15
+assertlog target 20.0): reached
+waitidle 40
+shot f08_alps
+view 51.3 9.4 2000 51.31 9.48 100
+waitidle 40
+shot f10_germany
+# High altitude passes (over Europe/Atlantic, daylight)
+view 47 9 40000 47.3 9.6 0
+waitidle 40
+shot f11_40km
+view 40 -5 400000 41 -2 0
+waitidle 40
+shot f12_400km
+view 0 5 3000000 0 10 0
+waitidle 40
+shot f13_3000km
+# Night: back at KSC, warp until the sun is 25 degrees below the horizon there
+view 28.50 -80.60 4000 28.56 -80.60 0
+sunel -25
+waitlog target -25.0): reached 15
+assertlog target -25.0): reached
+waitidle 40
+shot f14_night_ksc
+assertnolog Exception

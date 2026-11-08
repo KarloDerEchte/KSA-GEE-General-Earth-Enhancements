@@ -65,7 +65,22 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
             RenderingPresets.ReverseZDepthStencil.DepthTestNoWrite, WindowBlend, out Pipeline);
     }
 
-    private const string VertexShader = ShaderSource.Version + ShaderSource.CameraBlock + """
+    private const string Hash = """
+
+        uint hash(uint x)
+        {
+            x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
+            return x;
+        }
+
+        float random(uint a, uint b, uint c)
+        {
+            return float(hash(a ^ hash(b ^ hash(c + 0x9e3779b9u))) >> 8) / 16777216.0;
+        }
+
+        """;
+
+    private const string VertexShader = ShaderSource.Version + ShaderSource.CameraBlock + Hash + """
 
         layout(location = 0) in vec4 up;
         layout(location = 1) in vec4 axisA;
@@ -78,6 +93,10 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
         layout(location = 1) flat out vec4 outParams;
         // wall width, wall top above the ground
         layout(location = 2) flat out vec2 outSize;
+        // floor height, bay width (fitted to the wall), floors, share of lit windows
+        layout(location = 3) flat out vec4 outGrid;
+        // window glass rectangle within its cell: x0, x1, y0, y1
+        layout(location = 4) flat out vec4 outGlass;
 
         const vec2 corners[6] = vec2[](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0));
 
@@ -93,32 +112,43 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
             // A little in front of the game's wall, so the depth test passes; more far away for depth precision.
             p += normalize(normal) * (0.03 + length(p) * 2e-5);
             gl_Position = global.camera.viewProjection * vec4(p, 1.0);
+            // Walls facing away from the camera are hidden behind the box: clip them away.
+            if (dot(normal, base.xyz + normal * 0.5) >= 0.0)
+                gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
 
             float width = length(run);
             float height = length(up.xyz);
+            float sizeY = height - axisA.w;
             outWall = vec2(q.x * width, q.y * height - axisA.w);
             outParams = vec4(up.w, float(wall), axisB.w, base.w);
-            outSize = vec2(width, height - axisA.w);
+            outSize = vec2(width, sizeY);
+
+            // Window grid of the wall's style, once per vertex instead of once per pixel.
+            int style = int(axisB.w + 0.5);
+            float floorHeight, bayWidth, lit;
+            vec4 glass;
+            if (style == 1)      { floorHeight = 3.7; bayWidth = 1.8; glass = vec4(0.06, 0.94, 0.12, 0.88); lit = 0.5; }  // office
+            else if (style == 2) { floorHeight = 6.0; bayWidth = 5.0; glass = vec4(0.10, 0.90, 0.55, 0.80); lit = 0.2; }  // hall
+            else if (style == 6) { floorHeight = 3.8; bayWidth = 1.5; glass = vec4(0.04, 0.96, 0.36, 0.80); lit = 0.45; } // ribbon windows
+            else                 { floorHeight = 2.9; bayWidth = 3.3; glass = vec4(0.28, 0.72, 0.32, 0.78); lit = 0.32; } // housing
+            lit = clamp(lit + (random(uint(up.w), 7u, 0u) - 0.5) * 0.4, 0.05, 0.9);
+            // Whole bays across the wall, so corners are never cut through a window.
+            bayWidth = width / max(floor(width / bayWidth), 1.0);
+            outGrid = vec4(floorHeight, bayWidth, floor((sizeY - 0.6) / floorHeight), lit);
+            outGlass = glass;
         }
         """;
 
-    private const string FragmentShader = ShaderSource.Version + """
+    private const string FragmentShader = ShaderSource.Version + Hash + """
         layout(location = 0) in vec2 wallPos;
         layout(location = 1) flat in vec4 params;
         layout(location = 2) flat in vec2 size;
+        // floor height, bay width (fitted to the wall), floors, share of lit windows
+        layout(location = 3) flat in vec4 grid;
+        // window glass rectangle within its cell: x0, x1, y0, y1
+        layout(location = 4) flat in vec4 glass;
 
         layout(location = 0) out vec4 outColor;
-
-        uint hash(uint x)
-        {
-            x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
-            return x;
-        }
-
-        float random(uint a, uint b, uint c)
-        {
-            return float(hash(a ^ hash(b ^ hash(c + 0x9e3779b9u))) >> 8) / 16777216.0;
-        }
 
         void main()
         {
@@ -127,58 +157,8 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
             int style = int(params.z + 0.5);
             float brightness = params.w;
 
-            // Floor height, bay width, window within its cell (x0, x1, y0, y1), share of lit windows.
-            float floorHeight, bayWidth, lit;
-            vec4 glass;
-            if (style == 1)      { floorHeight = 3.7; bayWidth = 1.8; glass = vec4(0.06, 0.94, 0.12, 0.88); lit = 0.5; }  // office
-            else if (style == 2) { floorHeight = 6.0; bayWidth = 5.0; glass = vec4(0.10, 0.90, 0.55, 0.80); lit = 0.2; }  // hall
-            else if (style == 6) { floorHeight = 3.8; bayWidth = 1.5; glass = vec4(0.04, 0.96, 0.36, 0.80); lit = 0.45; } // ribbon windows
-            else                 { floorHeight = 2.9; bayWidth = 3.3; glass = vec4(0.28, 0.72, 0.32, 0.78); lit = 0.32; } // housing
-            lit = clamp(lit + (random(seed, 7u, 0u) - 0.5) * 0.4, 0.05, 0.9);
-
-            // Whole bays across the wall, so corners are never cut through a window.
-            float bays = max(floor(size.x / bayWidth), 1.0);
-            bayWidth = size.x / bays;
-            float floors = floor((size.y - 0.6) / floorHeight);
-            vec2 cell = vec2(wallPos.x / bayWidth, wallPos.y / floorHeight);
-            vec2 id = floor(cell);
-            vec2 f = fract(cell);
-            float inside = wallPos.y > 0.0 && id.y < floors && size.x >= 2.0 ? 1.0 : 0.0;
-
-            vec2 fw = max(fwidth(cell), vec2(1e-4));
-            // Frame: the glass rectangle grown by a few centimetres; the glass itself sits inside it.
-            vec2 frame = vec2(0.07, 0.06);
-            vec4 outer = vec4(glass.x - frame.x * 0.5, glass.y + frame.x * 0.5, glass.z - frame.y * 0.5, glass.w + frame.y * 0.5);
-            float cx = smoothstep(glass.x - fw.x, glass.x + fw.x, f.x) - smoothstep(glass.y - fw.x, glass.y + fw.x, f.x);
-            float cy = smoothstep(glass.z - fw.y, glass.z + fw.y, f.y) - smoothstep(glass.w - fw.y, glass.w + fw.y, f.y);
-            float cover = cx * cy * inside;
-            float ox = smoothstep(outer.x - fw.x, outer.x + fw.x, f.x) - smoothstep(outer.y - fw.x, outer.y + fw.x, f.x);
-            float oy = smoothstep(outer.z - fw.y, outer.z + fw.y, f.y) - smoothstep(outer.w - fw.y, outer.w + fw.y, f.y);
-            float frameCover = max(ox * oy * inside - cover, 0.0);
-
-            uint cellId = uint(id.x) + uint(max(id.y, 0.0)) * 1024u + wall * 1048576u;
-            float on = random(seed, cellId, 1u) < lit ? 1.0 : 0.0;
-            float tone = random(seed, cellId, 2u);
-            vec3 light = tone < 0.6 ? vec3(1.0, 0.72, 0.42) : tone < 0.9 ? vec3(1.0, 0.88, 0.72) : vec3(0.75, 0.85, 1.0);
-            light *= 0.6 + 0.8 * random(seed, cellId, 3u);
-            vec3 emission = light * on * cover;
-
-            // Glass darkness by day: some panes are curtained or reflect the bright sky.
-            float pane = random(seed, cellId, 4u);
-            float glassAlpha = style == 1 ? mix(0.30, 0.55, pane) : mix(0.35, 0.80, pane * pane);
-
-            // Slab edge between floors (a shadow line) and, on the ground floor, a taller shop front.
-            float slab = (1.0 - smoothstep(0.05, 0.05 + fw.y * 2.0, f.y)) * inside;
-            float groundShop = id.y < 0.5 && style != 0 ? 1.0 : 0.0;
-            float alpha = 1.0 - (1.0 - glassAlpha) * cover - 0.22 * frameCover - 0.14 * slab;
-            alpha -= 0.12 * groundShop * cover;
-
-            // Foot of the wall is soiled, the top edge sits in the shadow of the eave.
-            float foot = 1.0 - smoothstep(0.0, 0.9, wallPos.y);
-            float eave = 1.0 - smoothstep(0.0, 0.7, size.y - wallPos.y);
-            alpha -= 0.16 * foot + 0.10 * eave;
-
             // Pre-engineered metal halls (4) and concrete utility shelters (5) of launch complexes: no window grid.
+            // (Taken first: style is flat, so the window grid below is never evaluated for them.)
             if (style == 4 || style == 5)
             {
                 float px = max(fwidth(wallPos.x), 1e-4);
@@ -234,10 +214,70 @@ internal sealed unsafe class FacadeTechnique() : InstancedPass<FacadeInstance>("
                 return;
             }
 
-            // Windows smaller than about a pixel: the grid's average instead.
+
+            // Floor height, bay width, floors and share of lit windows come per wall from the vertex shader.
+            float bayWidth = grid.y;
+            float floors = grid.z;
+            float lit = grid.w;
+            vec2 cell = vec2(wallPos.x / bayWidth, wallPos.y / grid.x);
+            vec2 fw = max(fwidth(cell), vec2(1e-4));
+            float inside = wallPos.y > 0.0 && floor(cell.y) < floors && size.x >= 2.0 ? 1.0 : 0.0;
+
+            // Foot of the wall is soiled, the top edge sits in the shadow of the eave.
+            float foot = 1.0 - smoothstep(0.0, 0.9, wallPos.y);
+            float eave = 1.0 - smoothstep(0.0, 0.7, size.y - wallPos.y);
+
+            // Windows smaller than about a pixel: the grid's average instead (no hashes, no grid maths).
             float far = smoothstep(0.35, 0.9, max(fw.x, fw.y));
             float meanCover = (glass.y - glass.x) * (glass.w - glass.z) * inside;
             float meanAlpha = 1.0 - (1.0 - 0.55) * meanCover - 0.04 - 0.16 * foot - 0.10 * eave;
+            if (far >= 1.0)
+            {
+                outColor = vec4(vec3(1.0, 0.8, 0.55) * (lit * meanCover * brightness), clamp(meanAlpha, 0.2, 1.0));
+                return;
+            }
+            // Outside the window area (below ground, above the last floor): only the soiling and the eave.
+            if (inside == 0.0)
+            {
+                outColor = vec4(0.0, 0.0, 0.0, clamp(mix(1.0 - 0.16 * foot - 0.10 * eave, meanAlpha, far), 0.2, 1.0));
+                return;
+            }
+
+            vec2 id = floor(cell);
+            vec2 f = fract(cell);
+            // Frame: the glass rectangle grown by a few centimetres; the glass itself sits inside it.
+            vec2 frame = vec2(0.07, 0.06);
+            vec4 outer = vec4(glass.x - frame.x * 0.5, glass.y + frame.x * 0.5, glass.z - frame.y * 0.5, glass.w + frame.y * 0.5);
+            float cx = smoothstep(glass.x - fw.x, glass.x + fw.x, f.x) - smoothstep(glass.y - fw.x, glass.y + fw.x, f.x);
+            float cy = smoothstep(glass.z - fw.y, glass.z + fw.y, f.y) - smoothstep(glass.w - fw.y, glass.w + fw.y, f.y);
+            float cover = cx * cy;
+            float ox = smoothstep(outer.x - fw.x, outer.x + fw.x, f.x) - smoothstep(outer.y - fw.x, outer.y + fw.x, f.x);
+            float oy = smoothstep(outer.z - fw.y, outer.z + fw.y, f.y) - smoothstep(outer.w - fw.y, outer.w + fw.y, f.y);
+            float frameCover = max(ox * oy - cover, 0.0);
+
+            uint cellId = uint(id.x) + uint(max(id.y, 0.0)) * 1024u + wall * 1048576u;
+            // Light of lit windows: only at night (brightness 0 by day).
+            vec3 emission = vec3(0.0);
+            if (brightness > 0.0)
+            {
+                float on = random(seed, cellId, 1u) < lit ? 1.0 : 0.0;
+                float tone = random(seed, cellId, 2u);
+                vec3 light = tone < 0.6 ? vec3(1.0, 0.72, 0.42) : tone < 0.9 ? vec3(1.0, 0.88, 0.72) : vec3(0.75, 0.85, 1.0);
+                light *= 0.6 + 0.8 * random(seed, cellId, 3u);
+                emission = light * on * cover;
+            }
+
+            // Glass darkness by day: some panes are curtained or reflect the bright sky.
+            float pane = random(seed, cellId, 4u);
+            float glassAlpha = style == 1 ? mix(0.30, 0.55, pane) : mix(0.35, 0.80, pane * pane);
+
+            // Slab edge between floors (a shadow line) and, on the ground floor, a taller shop front.
+            float slab = 1.0 - smoothstep(0.05, 0.05 + fw.y * 2.0, f.y);
+            float groundShop = id.y < 0.5 && style != 0 ? 1.0 : 0.0;
+            float alpha = 1.0 - (1.0 - glassAlpha) * cover - 0.22 * frameCover - 0.14 * slab;
+            alpha -= 0.12 * groundShop * cover;
+            alpha -= 0.16 * foot + 0.10 * eave;
+
             emission = mix(emission, vec3(1.0, 0.8, 0.55) * lit * meanCover, far);
             alpha = mix(alpha, meanAlpha, far);
 

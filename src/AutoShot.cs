@@ -13,11 +13,26 @@ namespace GEE;
 ///   crewarm dock|undock|finish  move the LC-39A crew access arm (finish: skip the swing)
 ///   view LAT LON ALT TLAT TLON TALT   free camera at a spot looking at a target
 ///   log TEXT              write a line to the game log
+///   waitidle [TIMEOUT_S=60]  wait until the mod's background work is idle (satellite tiles + heights, elevation,
+///                         near/far/water/regional/global tile queues all empty) and has stayed so for ~1 s;
+///                         logs "AutoShot: idle after X s" or "AutoShot: waitidle timeout"
+///   waitlog TEXT [TIMEOUT_S=60]  wait until a game log line containing TEXT has been written (the log file
+///                         Logs/*.PID.log of this process is tailed; a trailing number is the timeout, so a TEXT
+///                         ending in a number needs an explicit timeout); logs "AutoShot: waitlog timeout" on failure
+///   assertlog TEXT        record a pass/fail: some log line seen so far contains TEXT
+///   assertnolog TEXT      record a pass/fail: no log line seen so far contains TEXT
+///   record NAME N [S]     N screenshots NAME_001.. with S seconds between them (a "video" as frames)
+///   clouds off|on         hide/show volumetric clouds and cloud shadows (sets GameSettings.Current.Graphics
+///                         Clouds/CloudShadows; stays until changed or the game restarts)
+///   quit                  write shots/results.json and shots/DONE (shot count, timestamp), then Environment.Exit(0)
+/// If the first line of the script is "#autoquit", quit runs by itself when the script ends (also after an error).
+/// shot NAME also writes shots/NAME.jpg (1280 px wide, quality 88) next to the full PNG.
+/// shots/results.json: {"asserts":[{"name","ok"}], "shots":[names], "errors":[log lines containing "Exception"]}.
 /// Lines starting with # are comments.
 /// </summary>
 internal static class AutoShot
 {
-    private enum Step { Next, Wait, Sun, ShotWait }
+    private enum Step { Next, Wait, Sun, ShotWait, Idle, LogWait }
 
     private static string[]? _lines;
     private static int _next;
@@ -28,6 +43,23 @@ internal static class AutoShot
     private static string _shotName = "";
     private static HashSet<string> _before = new();
     private static bool _checked;
+    private static bool _autoQuit, _quitting;
+    private static string _dir = "";
+    private static readonly System.Diagnostics.Stopwatch Clock = System.Diagnostics.Stopwatch.StartNew();
+    private static double _stepStart, _idleSince = -1, _waitTimeout;
+    private static string _waitText = "";
+    private static readonly List<string> Shots = new();
+    private static readonly List<(string Name, bool Ok)> Asserts = new();
+    private static readonly List<string> Errors = new();
+    // Log tail: every line of this process's game log file seen so far.
+    private static readonly List<string> LogLines = new();
+    private static string? _logPath;
+    private static long _logPos;
+    private static string _logCarry = "";
+    private static double _logPolledAt = -1;
+
+    /// <summary>Set by the mod: number of unfinished background jobs of the tile/terrain loaders (0 = idle).</summary>
+    public static Func<int>? BusyProbe;
 
     private static string ScreenshotsFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "My Games", "Kitten Space Agency", "exports", "screenshots");
@@ -42,7 +74,9 @@ internal static class AutoShot
             string path = Path.Combine(modDir, "autoshot.txt");
             if (!File.Exists(path))
                 return;
-            _lines = File.ReadAllLines(path);
+            _lines = ExpandRecords(File.ReadAllLines(path));
+            _dir = modDir;
+            _autoQuit = _lines.Length > 0 && _lines[0].Trim().Equals("#autoquit", StringComparison.OrdinalIgnoreCase);
             File.Move(path, Path.Combine(modDir, "autoshot.done"), true);
             Log.Info($"autoshot: {_lines.Length} lines");
         }
@@ -51,6 +85,7 @@ internal static class AutoShot
             // A view is held every frame until the next camera command: set once, the free camera drifts away.
             if (_view != null)
                 View(_view, bodyId);
+            PollLog();
             Run(dt, modDir, bodyId, sunId);
         }
         catch (Exception e)
@@ -58,7 +93,140 @@ internal static class AutoShot
             Log.Error($"autoshot failed: {e}");
             _next = _lines.Length;
             _step = Step.Next;
+            if (_autoQuit)
+                Quit();
         }
+    }
+
+    /// <summary>
+    /// "record NAME COUNT [INTERVAL_S=1]" becomes COUNT x ("shot NAME_001", "wait INTERVAL_S"): a frame sequence for
+    /// watching motion (launch, camera moves, time warp). tools/postprocess.py turns NAME_NNN into a filmstrip, a GIF
+    /// and, when ffmpeg is installed, an mp4. Put camera/simspeed commands before it; the real interval is the wait plus
+    /// the screenshot time (about 1 s).
+    /// </summary>
+    private static string[] ExpandRecords(string[] lines)
+    {
+        var result = new List<string>(lines.Length);
+        foreach (string raw in lines)
+        {
+            string[] w = raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (w.Length >= 3 && w[0] == "record" && int.TryParse(w[2], out int count))
+            {
+                string interval = w.Length > 3 ? w[3] : "1";
+                for (int i = 1; i <= Math.Min(count, 999); i++)
+                {
+                    result.Add($"shot {w[1]}_{i:000}");
+                    result.Add($"wait {interval}");
+                }
+            }
+            else
+                result.Add(raw);
+        }
+        return result.ToArray();
+    }
+
+    // ---- log tail ----
+
+    private static void PollLog()
+    {
+        double now = Clock.Elapsed.TotalSeconds;
+        if (now - _logPolledAt < 0.2)
+            return;
+        _logPolledAt = now;
+        try
+        {
+            if (_logPath == null)
+            {
+                string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "My Games", "Kitten Space Agency", "Logs");
+                if (!Directory.Exists(folder))
+                    return;
+                _logPath = Directory.GetFiles(folder, $"*.{Environment.ProcessId}.log").FirstOrDefault();
+                if (_logPath == null)
+                    return;
+            }
+            using var stream = new FileStream(_logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            if (stream.Length <= _logPos)
+                return;
+            stream.Position = _logPos;
+            var buffer = new byte[stream.Length - _logPos];
+            int n = stream.Read(buffer, 0, buffer.Length);
+            _logPos += n;
+            string text = _logCarry + System.Text.Encoding.UTF8.GetString(buffer, 0, n);
+            string[] parts = text.Split('\n');
+            _logCarry = parts[^1];
+            for (int i = 0; i < parts.Length - 1; i++)
+            {
+                string l = parts[i].TrimEnd('\r');
+                LogLines.Add(l);
+                if (l.Contains("Exception", StringComparison.Ordinal) && !l.Contains("AutoShot:", StringComparison.OrdinalIgnoreCase)
+                    && !l.Contains("autoshot: >", StringComparison.OrdinalIgnoreCase) && Errors.Count < 500)
+                    Errors.Add(l.Length > 600 ? l[..600] : l);
+            }
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    private static bool LogContains(string text) => LogLines.Any(l => l.Contains(text, StringComparison.Ordinal));
+
+    // ---- quit / results ----
+
+    private static string Q(string v) => "\"" + v.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n").Replace("\t", "\\t") + "\"";
+
+    private static void Quit()
+    {
+        if (_quitting)
+            return;
+        _quitting = true;
+        try
+        {
+            _logPolledAt = -1;
+            PollLog();
+            string shots = Path.Combine(_dir, "shots");
+            Directory.CreateDirectory(shots);
+            var sb = new System.Text.StringBuilder();
+            sb.Append("{\"asserts\":[").Append(string.Join(",", Asserts.Select(a => $"{{\"name\":{Q(a.Name)},\"ok\":{(a.Ok ? "true" : "false")}}}")));
+            sb.Append("],\"shots\":[").Append(string.Join(",", Shots.Select(Q)));
+            sb.Append("],\"errors\":[").Append(string.Join(",", Errors.Select(Q))).Append("]}");
+            File.WriteAllText(Path.Combine(shots, "results.json"), sb.ToString());
+            File.WriteAllText(Path.Combine(shots, "DONE"), $"shots={Shots.Count} time={DateTime.Now:yyyy-MM-dd HH:mm:ss}\n");
+            Log.Notice($"AutoShot: quit, {Shots.Count} shots");
+        }
+        catch (Exception e)
+        {
+            Log.Error($"AutoShot: quit failed to write results: {e.Message}");
+        }
+        Environment.Exit(0);
+    }
+
+    /// <summary>Writes the PNG as a JPG 1280 px wide (box filter). False when it could not be done.</summary>
+    private static unsafe bool WriteJpg(string source, string target)
+    {
+        using var image = Brutal.StbApi.Stb.Load(source, 3);
+        if (image.Data == null || image.Width <= 0)
+            return false;
+        int w = image.Width, h = image.Height, ow = Math.Min(1280, w), oh = Math.Max(1, (int)((long)h * ow / w));
+        var output = new byte[ow * oh * 3];
+        byte* src = image.Data;
+        for (int y = 0; y < oh; y++)
+        {
+            int y0 = (int)((long)y * h / oh), y1 = Math.Max(y0 + 1, (int)((long)(y + 1) * h / oh));
+            for (int x = 0; x < ow; x++)
+            {
+                int x0 = (int)((long)x * w / ow), x1 = Math.Max(x0 + 1, (int)((long)(x + 1) * w / ow));
+                int r = 0, g = 0, b = 0, c = 0;
+                for (int yy = y0; yy < y1; yy++)
+                    for (int xx = x0; xx < x1; xx++)
+                    {
+                        byte* p = src + ((long)yy * w + xx) * 3;
+                        r += p[0]; g += p[1]; b += p[2]; c++;
+                    }
+                int o = (y * ow + x) * 3;
+                output[o] = (byte)(r / c); output[o + 1] = (byte)(g / c); output[o + 2] = (byte)(b / c);
+            }
+        }
+        return Brutal.StbApi.Stb.WriteJpg(target, ow, oh, 3, output, 88);
     }
 
     private static void Run(double dt, string modDir, string bodyId, string sunId)
@@ -73,16 +241,57 @@ internal static class AutoShot
                 if (SunElevation(bodyId, sunId) is not { } elevation)
                     return;
                 double delta = Math.Abs(elevation - _target);
-                // Gives up after a minute: a target above the day's highest sun is never reached.
-                if (delta < 0.4 || (_timer += dt) > 60)
+                // Gives up after 3 real minutes: a target above the day's highest sun is never reached.
+                if (_timer == 0)
+                    _stepStart = Clock.Elapsed.TotalSeconds;
+                _timer = 1;
+                bool reached = delta < 0.4;
+                if (reached || Clock.Elapsed.TotalSeconds - _stepStart > 180)
                 {
                     Program.TerminalInterface.Execute("simspeed 1");
-                    Log.Info($"autoshot: sun at {elevation:0.0} degrees");
+                    Log.Notice(FormattableString.Invariant($"AutoShot: sun at {elevation:0.0} degrees (target {_target:0.0}): {(reached ? "reached" : "TIMEOUT")}"));
                     _step = Step.Next;
                     return;
                 }
-                Program.TerminalInterface.Execute($"simspeed {Math.Clamp(delta * 2500, 20, 40000):0}");
+                Program.TerminalInterface.Execute($"simspeed {Math.Clamp(delta * 1500, 20, 20000):0}");
                 return;
+            case Step.Idle:
+            {
+                double now = Clock.Elapsed.TotalSeconds;
+                if (BusyProbe?.Invoke() is not > 0)
+                {
+                    if (_idleSince < 0)
+                        _idleSince = now;
+                }
+                else
+                    _idleSince = -1;
+                if (_idleSince >= 0 && now - _idleSince >= 1)
+                {
+                    Log.Notice($"AutoShot: idle after {now - _stepStart:0.0} s");
+                    _step = Step.Next;
+                }
+                else if (now - _stepStart > _waitTimeout)
+                {
+                    Log.Notice("AutoShot: waitidle timeout");
+                    _step = Step.Next;
+                }
+                return;
+            }
+            case Step.LogWait:
+            {
+                double now = Clock.Elapsed.TotalSeconds;
+                if (LogContains(_waitText))
+                {
+                    Log.Notice($"AutoShot: waitlog found after {now - _stepStart:0.0} s");
+                    _step = Step.Next;
+                }
+                else if (now - _stepStart > _waitTimeout)
+                {
+                    Log.Notice($"AutoShot: waitlog timeout ({_waitText})");
+                    _step = Step.Next;
+                }
+                return;
+            }
             case Step.ShotWait:
                 _timer -= dt;
                 string? file = Directory.Exists(ScreenshotsFolder)
@@ -94,6 +303,16 @@ internal static class AutoShot
                     string shots = Path.Combine(modDir, "shots");
                     Directory.CreateDirectory(shots);
                     File.Copy(file, Path.Combine(shots, _shotName + Path.GetExtension(file)), true);
+                    Shots.Add(_shotName);
+                    try
+                    {
+                        if (!WriteJpg(file, Path.Combine(shots, _shotName + ".jpg")))
+                            Log.Error($"AutoShot: jpg of {_shotName} failed");
+                    }
+                    catch (Exception e)
+                    {
+                        Log.Error($"AutoShot: jpg of {_shotName} failed: {e.Message}");
+                    }
                     Log.Info($"autoshot: saved {_shotName}");
                     _step = Step.Next;
                 }
@@ -130,6 +349,44 @@ internal static class AutoShot
                     Program.TerminalInterface.Execute("screenshot");
                     _step = Step.ShotWait;
                     break;
+                case "waitidle":
+                    _waitTimeout = argument.Length > 0 ? double.Parse(argument, System.Globalization.CultureInfo.InvariantCulture) : 60;
+                    _stepStart = Clock.Elapsed.TotalSeconds;
+                    _idleSince = -1;
+                    _step = Step.Idle;
+                    break;
+                case "waitlog":
+                {
+                    // A trailing number is the timeout in seconds.
+                    string text = argument;
+                    _waitTimeout = 60;
+                    int sp = argument.LastIndexOf(' ');
+                    if (sp > 0 && double.TryParse(argument[(sp + 1)..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double t))
+                    {
+                        _waitTimeout = t;
+                        text = argument[..sp].Trim();
+                    }
+                    _waitText = text;
+                    _stepStart = Clock.Elapsed.TotalSeconds;
+                    _logPolledAt = -1;
+                    PollLog();
+                    _step = Step.LogWait;
+                    break;
+                }
+                case "assertlog":
+                case "assertnolog":
+                {
+                    _logPolledAt = -1;
+                    PollLog();
+                    bool has = LogContains(argument);
+                    bool ok = words[0] == "assertlog" ? has : !has;
+                    Asserts.Add(($"{words[0]} {argument}", ok));
+                    Log.Notice($"AutoShot: {words[0]} {argument}: {(ok ? "ok" : "FAILED")}");
+                    break;
+                }
+                case "quit":
+                    Quit();
+                    break;
                 case "crewarm":
                     // crewarm dock | undock | finish
                     if (argument == "dock")
@@ -138,6 +395,9 @@ internal static class AutoShot
                         CrewArm.Undock();
                     else
                         CrewArm.Finish();
+                    break;
+                case "clouds":
+                    SetClouds(!argument.Equals("off", StringComparison.OrdinalIgnoreCase));
                     break;
                 case "view":
                     _view = argument;
@@ -154,12 +414,28 @@ internal static class AutoShot
                     break;
             }
         }
+        if (_autoQuit && _step == Step.Next && _next >= _lines.Length)
+            Quit();
     }
 
     /// <summary>
     /// view LAT LON ALT TLAT TLON TALT: puts the (free) camera at a place ALT metres above the ground and turns it
     /// to the target point, with the local vertical up.
     /// </summary>
+    private static bool _cloudsSaved;
+    private static GameSettings.CloudShadows _savedShadows;
+
+    /// <summary>Volumetric clouds + cloud shadows on/off via the live graphics settings (the console command
+    /// renderclouds is only a per-body toggle and is not reliable).</summary>
+    private static void SetClouds(bool on)
+    {
+        var g = GameSettings.Current.Graphics;
+        if (!_cloudsSaved) { _savedShadows = g.CloudShadows; _cloudsSaved = true; }
+        g.Clouds = on;
+        g.CloudShadows = on ? _savedShadows : GameSettings.CloudShadows.Off;
+        Log.Info($"autoshot: clouds {(on ? "on" : "off")}");
+    }
+
     private static void View(string argument, string bodyId)
     {
         double[] v = argument.Split(' ', StringSplitOptions.RemoveEmptyEntries)
@@ -174,13 +450,16 @@ internal static class AutoShot
         }
         double3 camera = Position(v[0], v[1], v[2]);
         double3 target = Position(v[3], v[4], v[5]);
-        // The renderer's view-up is the LookAt up vector turned by a quarter around the view direction, so pass
-        // the vector that ends up as the local vertical (mode 1 or 2 picks the sense; 0 passes it unchanged).
+        // The fly controller rewrites LocalRotation every frame from a cached offset (frame2Ecl * offset), so after
+        // aiming the camera the offset has to be re-cached or the old orientation (and its roll) comes back.
         double3 forward = double3.Normalize(target - camera);
         double3 vertical = double3.Normalize(camera - body.GetPositionEcl());
-        int mode = v.Length > 6 ? (int)v[6] : 1;
-        double3 up = mode == 1 ? double3.Cross(forward, vertical) : mode == 2 ? double3.Cross(vertical, forward) : vertical;
-        Program.GetMainCamera().LookAt(camera, target, up);
+        if (double3.Cross(forward, vertical).Length() < 1e-6)
+            vertical = double3.Normalize(double3.Cross(forward, Math.Abs(forward.X) < 0.9 ? double3.UnitX : double3.UnitY));
+        var cam = Program.GetMainCamera();
+        cam.PositionEcl = camera;
+        cam.LocalRotation = Camera.LookAtRotation(forward, vertical);
+        Program.GetFlyController().CacheOffset();
     }
 
     /// <summary>Sun elevation in degrees above the camera's horizon, or null while there is no camera or body.</summary>

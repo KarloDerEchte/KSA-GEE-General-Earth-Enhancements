@@ -1,0 +1,130 @@
+# Flight video along the Indian River lagoon, Titusville -> Melbourne, clouds off. Frames lagoon_001.. (postprocess makes film/gif)
+load Launch_A
+waitidle 30
+clouds off
+waitidle 60
+sunel 35
+waitidle 30
+camera Free
+follow Earth
+view 28.6200 -80.8000 3500 28.5784 -80.7824 0
+waitidle 20
+shot lagoon_001
+view 28.6067 -80.7944 3500 28.5651 -80.7768 0
+wait 1.5
+shot lagoon_002
+view 28.5933 -80.7887 3500 28.5517 -80.7711 0
+wait 1.5
+shot lagoon_003
+view 28.5800 -80.7831 3500 28.5384 -80.7655 0
+wait 1.5
+shot lagoon_004
+view 28.5667 -80.7774 3500 28.5251 -80.7598 0
+wait 1.5
+shot lagoon_005
+view 28.5533 -80.7718 3500 28.5117 -80.7542 0
+wait 1.5
+shot lagoon_006
+view 28.5400 -80.7662 3500 28.4984 -80.7486 0
+wait 1.5
+shot lagoon_007
+view 28.5267 -80.7605 3500 28.4851 -80.7429 0
+wait 1.5
+shot lagoon_008
+view 28.5133 -80.7549 3500 28.4717 -80.7373 0
+wait 1.5
+shot lagoon_009
+view 28.5000 -80.7492 3500 28.4584 -80.7316 0
+wait 1.5
+shot lagoon_010
+view 28.4867 -80.7436 3500 28.4451 -80.7260 0
+wait 1.5
+shot lagoon_011
+view 28.4733 -80.7379 3500 28.4317 -80.7203 0
+wait 1.5
+shot lagoon_012
+view 28.4600 -80.7323 3500 28.4184 -80.7147 0
+wait 1.5
+shot lagoon_013
+view 28.4467 -80.7267 3500 28.4051 -80.7091 0
+wait 1.5
+shot lagoon_014
+view 28.4333 -80.7210 3500 28.3917 -80.7034 0
+wait 1.5
+shot lagoon_015
+view 28.4200 -80.7154 3500 28.3784 -80.6978 0
+wait 1.5
+shot lagoon_016
+view 28.4067 -80.7097 3500 28.3651 -80.6921 0
+wait 1.5
+shot lagoon_017
+view 28.3933 -80.7041 3500 28.3517 -80.6865 0
+wait 1.5
+shot lagoon_018
+view 28.3800 -80.6985 3500 28.3384 -80.6809 0
+wait 1.5
+shot lagoon_019
+view 28.3667 -80.6928 3500 28.3251 -80.6752 0
+wait 1.5
+shot lagoon_020
+view 28.3533 -80.6872 3500 28.3117 -80.6696 0
+wait 1.5
+shot lagoon_021
+view 28.3400 -80.6815 3500 28.2984 -80.6639 0
+wait 1.5
+shot lagoon_022
+view 28.3267 -80.6759 3500 28.2851 -80.6583 0
+wait 1.5
+shot lagoon_023
+view 28.3133 -80.6703 3500 28.2717 -80.6527 0
+wait 1.5
+shot lagoon_024
+view 28.3000 -80.6646 3500 28.2584 -80.6470 0
+wait 1.5
+shot lagoon_025
+view 28.2867 -80.6590 3500 28.2451 -80.6414 0
+wait 1.5
+shot lagoon_026
+view 28.2733 -80.6533 3500 28.2317 -80.6357 0
+wait 1.5
+shot lagoon_027
+view 28.2600 -80.6477 3500 28.2184 -80.6301 0
+wait 1.5
+shot lagoon_028
+view 28.2467 -80.6421 3500 28.2051 -80.6245 0
+wait 1.5
+shot lagoon_029
+view 28.2333 -80.6364 3500 28.1917 -80.6188 0
+wait 1.5
+shot lagoon_030
+view 28.2200 -80.6308 3500 28.1784 -80.6132 0
+wait 1.5
+shot lagoon_031
+view 28.2067 -80.6251 3500 28.1651 -80.6075 0
+wait 1.5
+shot lagoon_032
+view 28.1933 -80.6195 3500 28.1517 -80.6019 0
+wait 1.5
+shot lagoon_033
+view 28.1800 -80.6138 3500 28.1384 -80.5962 0
+wait 1.5
+shot lagoon_034
+view 28.1667 -80.6082 3500 28.1251 -80.5906 0
+wait 1.5
+shot lagoon_035
+view 28.1533 -80.6026 3500 28.1117 -80.5850 0
+wait 1.5
+shot lagoon_036
+view 28.1400 -80.5969 3500 28.0984 -80.5793 0
+wait 1.5
+shot lagoon_037
+view 28.1267 -80.5913 3500 28.0851 -80.5737 0
+wait 1.5
+shot lagoon_038
+view 28.1133 -80.5856 3500 28.0717 -80.5680 0
+wait 1.5
+shot lagoon_039
+view 28.1000 -80.5800 3500 28.0584 -80.5624 0
+wait 1.5
+shot lagoon_040
+assertnolog Exception

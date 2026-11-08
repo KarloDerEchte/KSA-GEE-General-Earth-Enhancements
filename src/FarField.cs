@@ -89,8 +89,10 @@ internal sealed class FarField : IDisposable
     }
 
     /// <summary>Main thread, once per frame.</summary>
-    public void Update(Celestial body, double3 cameraCcf, double now)
+    public void Update(Celestial body, double3 cameraCcf, double now, Camera? camera = null)
     {
+        if (camera != null)
+            ViewFilter.Begin(camera, body, cameraCcf);
         _planetRadius = body.MeanRadius;
         double r = Math.Sqrt(double3.Dot(cameraCcf, cameraCcf));
         double lat = Math.Asin(Math.Clamp(cameraCcf.Z / r, -1, 1)) * 180 / Math.PI;
@@ -104,13 +106,20 @@ internal sealed class FarField : IDisposable
         {
             _lastScan = now;
             RequestAround(lat, lon, _settings.FarRadiusKm);
-            Evict(lat, lon, _settings.FarRadiusKm * 1.25 + 3);
+            Evict(lat, lon, _settings.FarRadiusKm * 1.4 + 5);
         }
         if (_tilesFinished)
         {
             _tilesFinished = false;
             RebuildSnapshot();
         }
+    }
+
+    /// <summary>Tiles behind the camera are left for when it turns (the disk cache has the ones seen before).</summary>
+    private bool ViewWanted(FarTile t)
+    {
+        var (s, w, n, e) = t.Bounds;
+        return ViewFilter.Wanted(Placement.DirCcf((s + n) / 2, (w + e) / 2) * _planetRadius, 3200);
     }
 
     private static double DistanceKm(FarTile t, double lat, double lon)
@@ -144,7 +153,7 @@ internal sealed class FarField : IDisposable
                         continue;
                     }
                     var tile = new FarTile(x, y);
-                    if (DistanceKm(tile, lat, lon) > radiusKm)
+                    if (DistanceKm(tile, lat, lon) > radiusKm || !ViewWanted(tile))
                         continue;
                     _tiles.Add((x, y), tile);
                     added++;
@@ -191,7 +200,7 @@ internal sealed class FarField : IDisposable
         {
             double hLat = n - (n - s) * (i / g) / (g - 1);
             double hLon = w + (e - w) * (i % g) / (g - 1);
-            heights[i] = (float)body.GetTerrainHeightFromDirCcf(Placement.DirCcf(hLat, hLon));
+            heights[i] = (float)Elevation.Height(body, Placement.DirCcf(hLat, hLon));
         }
         tile.Heights = heights;
         tile.Instances = new BuildingInstance[raw.Count];
@@ -274,6 +283,7 @@ internal sealed class FarField : IDisposable
     {
         var result = new List<(double, double, Box2, double, int, uint)>();
         const double metersPerDegree = Math.PI / 180 * 6371000;
+        var water = VectorTile.BigWater(VectorTile.WaterAreasOf(data), FarTile.Zoom, tx, ty, 6371000);
         VectorTile.ForEachFeature(data, layer => layer == "building", (layer, type, tags, geometry, extent) =>
         {
             if (type != 3)
@@ -285,6 +295,8 @@ internal sealed class FarField : IDisposable
                     continue;
                 var ll = ring.Select(p => VectorTile.ToLatLon(FarTile.Zoom, tx + p.X / extent, ty + p.Y / extent)).ToList();
                 double lat0 = ll.Average(p => p.Lat), lon0 = ll.Average(p => p.Lon);
+                if (water.Count > 0 && VectorTile.InWater(water, FarTile.Zoom, tx, ty, lat0, lon0, 6371000))
+                    continue;                                          // a pier or boathouse: the water is lowered there
                 double kLon = metersPerDegree * Math.Cos(lat0 * Math.PI / 180);
                 var outline = ll.Select(p => new Footprint.P((p.Lon - lon0) * kLon, (p.Lat - lat0) * metersPerDegree)).ToList();
                 double area = Math.Abs(Footprint.SignedArea(outline));

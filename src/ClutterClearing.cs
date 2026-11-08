@@ -29,6 +29,8 @@ internal sealed class ClutterClearing
     private TreeCover.Kind[] _kinds = Array.Empty<TreeCover.Kind>();
     private double[] _ranges = Array.Empty<double>();
     private TreeCover? _treeCover;
+    /// <summary>The tile set for which every clutter mask has been handed to the game (null while there is work).</summary>
+    private Tile[]? _settledTiles;
     /// <summary>Counts the times the game's exclusions were reset, so TreeCover sorts everything again.</summary>
     private int _generation;
     private object? _target;
@@ -76,13 +78,17 @@ internal sealed class ClutterClearing
             _generation++;
             foreach (var tile in tiles)
                 tile.ClutterApplied = 0;
+            _settledTiles = null;
         }
 
         long deadline = Stopwatch.GetTimestamp() + (long)(budgetMs * Stopwatch.Frequency / 1000);
         bool physicsListening = _clock.Elapsed.TotalSeconds - _lastPhysicsSync < 1;
         int pending = 0;
         // Nearest first: grass only shows within ~80 m of the camera, and a city tile holds a lot of it.
-        var ordered = tiles.OrderBy(t => double3.Dot(t.CenterCcf - cameraCcf, t.CenterCcf - cameraCcf));
+        // Every masks of every tile are handed over and the set of tiles is the same (it is replaced as a whole when a tile arrives or leaves):
+        // nothing to look at, so the tiles are not sorted by distance every frame.
+        bool settled = ReferenceEquals(tiles, _settledTiles) && _settings.ClearClutter;
+        var ordered = settled ? Enumerable.Empty<Tile>() : tiles.OrderBy(t => double3.Dot(t.CenterCcf - cameraCcf, t.CenterCcf - cameraCcf));
         foreach (var tile in _settings.ClearClutter ? ordered : Enumerable.Empty<Tile>())
         {
             if (tile.State != TileState.Ready)
@@ -129,7 +135,8 @@ internal sealed class ClutterClearing
             // A failure here turns tree cover off for the session (reported once) instead of stopping the whole update.
             try
             {
-                HandOverTreeCover(body, renderer, placement, cameraCcf, deadline);
+                using (Perf.Measure("  tree cover"))
+                    HandOverTreeCover(body, renderer, placement, cameraCcf, deadline);
             }
             catch (Exception e)
             {
@@ -139,6 +146,8 @@ internal sealed class ClutterClearing
         }
         _excludedCells = placement.Sum(p => p.ExcludedCells.Count);
         Pending = pending;
+        if (!settled)
+            _settledTiles = pending == 0 && _settings.ClearClutter ? tiles : null;
         Status = !_settings.ClearClutter ? "roads and buildings off" : pending > 0 ? $"clearing, {pending} tiles to go" : "up to date";
 
         if (!_selfTestDone)
@@ -232,6 +241,7 @@ internal sealed class ClutterClearing
             grids[i] = new ClutterGrid(i, resolution, clearance);
             _collideable[i] = ecotypes[i].Collideable;
             _kinds[i] = TreeCover.KindOf(ecotypes[i].Name);
+            Scatter.Register(i, ecotypes[i]);
             _ranges[i] = ecotypes[i].Placement.GenerationRange.InMeters();
             Log.Info($"clutter grid {ecotypes[i].Name}: separation {separation:0.##} m, resolution {resolution}, clearance {clearance:0.#} m");
         }

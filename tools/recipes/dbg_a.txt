@@ -1,0 +1,19 @@
+# Fixed-camera lagoon debug views (A: frame 30, B: frame 36, C: frame 15)
+load Launch_A
+waitidle 30
+clouds off
+waitidle 60
+sunel 35
+waitidle 30
+camera Free
+follow Earth
+view 28.4333 -80.7210 3500 28.3917 -80.7034 0
+waitidle 40
+shot dbg_c
+view 28.2333 -80.6364 3500 28.1917 -80.6188 0
+waitidle 40
+shot dbg_a
+view 28.1533 -80.6026 3500 28.1117 -80.5850 0
+waitidle 40
+shot dbg_b
+assertnolog Exception

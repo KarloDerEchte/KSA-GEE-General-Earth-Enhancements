@@ -1,0 +1,29 @@
+# Lakes: Okeechobee (low level), Jacksonville St. Johns, Tahoe, Walker Lake.
+load Launch_A
+waitidle 30
+log clouds off
+clouds off
+waitidle 60
+sunel 35
+waitidle 30
+camera Free
+follow Earth
+view 26.8 -80.8 4000 26.95 -80.8 0
+waitidle 60
+shot l01_okeechobee
+view 30.1 -81.75 3000 30.32 -81.65 0
+waitidle 60
+shot l02_stjohns
+view 38.8 -120.0 5000 39.0 -120.0 1900
+waitidle 60
+shot l03_tahoe
+view 38.5 -118.8 6000 38.7 -118.7 1200
+waitidle 60
+shot l04_walker
+view 28.45 -80.75 6000 28.40 -80.65 0
+waitidle 60
+shot l05_indian_river
+view 28.30 -80.62 15000 28.30 -80.65 0
+waitidle 60
+shot l06_lagoons_15km
+assertnolog Exception

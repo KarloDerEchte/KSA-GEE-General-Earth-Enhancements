@@ -27,6 +27,8 @@ public sealed class RawRoad
     /// lines (Buildings.PlainVariant), about as far as the other roads there reach.
     /// </summary>
     public double[]? Clear;
+    /// <summary>Length of the tapered merge stretch at each end of a ramp (RoadMerges), laid with gore hatching (RoadGore).</summary>
+    public double GoreAtStart, GoreAtEnd;
     /// <summary>Which surface and markings the road gets (Buildings.SurfaceVariant).</summary>
     public RoadSurface Surface;
     /// <summary>A bridge over another road (RoadBridges): the whole deck at Placement.BridgeClearance, with pillars.</summary>
@@ -41,7 +43,13 @@ public sealed class RawRoad
 /// Road surfaces, each a scan-based material with its own markings (make_assets.py ROAD_PROFILES): main roads with
 /// edge and centre lines, unmarked streets, one-lane ramps with edge lines, highway carriageways, and unpaved tracks.
 /// </summary>
-public enum RoadSurface { Road, Street, Ramp, Highway, Track }
+public enum RoadSurface { Road, Street, Ramp, Highway, Track, Highway3, Highway4 }
+
+public static class RoadSurfaces
+{
+    /// <summary>Highway carriageway with 2, 3 or 4 estimated lanes.</summary>
+    public static bool IsHighway(this RoadSurface surface) => surface is RoadSurface.Highway or RoadSurface.Highway3 or RoadSurface.Highway4;
+}
 
 public enum Airfield { None, Runway, Taxiway }
 
@@ -53,6 +61,8 @@ public static class Roads
     public const double RankStep = 0.04;
     public const double TieStep = 0.008;
     public const int TieLevels = 5;
+    /// <summary>Widths of the lane-count variants; make_assets.py ROAD_PROFILES "highway 3" / "highway 4" use the same.</summary>
+    public const double Highway3Width = 14.5, Highway4Width = 16.4;
 
     public static (double Width, int Rank, bool Bridge, bool Lit, RoadSurface Surface)? Classify(Dictionary<string, object?> tags)
     {
@@ -89,15 +99,29 @@ public static class Roads
         // One carriageway of a motorway: two 3.75 m lanes, a 2.5 m hard shoulder and a strip on the left; of a trunk
         // road two 3.5 m lanes and narrower edges. Both get the highway surface, laid out for 11 m.
         bool highway = oneway && !ramp && cls is "motorway" or "trunk";
+        // OMT's transportation layer has no lanes tag (checked in the cached z14 tiles: class, subclass, brunnel, oneway,
+        // ramp, service, surface, expressway, toll ... only), so lane counts are an ESTIMATE from the road's own tags,
+        // identical in every tile it crosses: one-way motorway carriageway 3 lanes, one-way trunk 2, a motorway/trunk
+        // mapped as one two-way line 4 (2+2, double centre line).
+        bool twoWayHighway = !oneway && !ramp && cls is "motorway" or "trunk";
+        var lanes = RoadSurface.Road;
         if (highway)
-            width = cls == "motorway" ? 11.0 : 9.0;
+        {
+            lanes = cls == "motorway" ? RoadSurface.Highway3 : RoadSurface.Highway;
+            width = cls == "motorway" ? Highway3Width : 9.0;
+        }
+        else if (twoWayHighway)
+        {
+            lanes = RoadSurface.Highway4;
+            width = Highway4Width;
+        }
         else if (oneway || ramp)
             width = Math.Max(width * 0.6, 3.0);
         // Ramps lie under the carriageway they merge into (RoadMerges slides their ends under its edge).
         if (ramp && cls is "motorway" or "trunk")
             rank--;
         bool unpaved = cls == "track" || tags.GetValueOrDefault("surface") as string == "unpaved";
-        var surface = highway ? RoadSurface.Highway
+        var surface = highway || twoWayHighway ? lanes
             : ramp && cls is "motorway" or "trunk" ? RoadSurface.Ramp
             : unpaved ? RoadSurface.Track
             : rank <= 1 ? RoadSurface.Street

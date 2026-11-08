@@ -82,11 +82,23 @@ public static class Buildings
     public static readonly int RampVariant = StreetVariant + 1;
     /// <summary>Tracks and unpaved roads: dirt scan.</summary>
     public static readonly int TrackVariant = RampVariant + 1;
-    public static readonly int VariantCount = TrackVariant + 1;
+    /// <summary>Estimated lane counts (OMT has no lanes tag, see Roads.Classify): three-lane one-way motorway carriageway, four-lane two-way trunk/motorway drawn as one line.</summary>
+    public static readonly int Highway3Variant = TrackVariant + 1;
+    public static readonly int Highway4Variant = Highway3Variant + 1;
+    /// <summary>Ramp surface with chevron hatching, for the tapered merge stretch (RoadGore).</summary>
+    public static readonly int GoreVariant = Highway4Variant + 1;
+    /// <summary>Solid white paint slab for crosswalk stripes and stop lines (JunctionMarkings), same scan mesh as the roads.</summary>
+    public static readonly int JunctionPaintVariant = GoreVariant + 1;
+    /// <summary>Roadside furniture (RoadFurniture, tools/furniture_assets.py): street lamp, post sign, sign gantry.</summary>
+    public static readonly int FurnitureVariant = JunctionPaintVariant + 1;
+    public const int FurnitureModels = 3;
+    public static readonly int VariantCount = FurnitureVariant + FurnitureModels;
 
     public static int SurfaceVariant(RoadSurface surface) => surface switch
     {
         RoadSurface.Highway => HighwayVariant,
+        RoadSurface.Highway3 => Highway3Variant,
+        RoadSurface.Highway4 => Highway4Variant,
         RoadSurface.Street => StreetVariant,
         RoadSurface.Ramp => RampVariant,
         RoadSurface.Track => TrackVariant,
@@ -103,8 +115,8 @@ public static class Buildings
 
     /// <summary>Road pieces (not airfield surfaces): these get street lamps.</summary>
     public static bool IsStreetSurface(int variant) =>
-        variant == RoadVariant || variant == RoadPlainVariant || variant == HighwayVariant || variant == StreetVariant
-        || variant == RampVariant || variant == TrackVariant;
+        variant == RoadVariant || variant == RoadPlainVariant || variant == HighwayVariant || variant == Highway3Variant || variant == Highway4Variant || variant == StreetVariant
+        || variant == RampVariant || variant == TrackVariant || variant == GoreVariant;
     /// <summary>Facades of plant and support buildings: concrete, metal, concrete.</summary>
     public static readonly int[] CompoundVariants = { 0, 6, 0 };
 
@@ -168,7 +180,10 @@ public static class Buildings
             double roof = Math.Tan(pitch) * Math.Min(box.LengthA, box.LengthB) / 2;
             building.RoofHeight = roof;
             building.Height = Math.Max(building.Height - (estimated ? 0 : roof), 2.6);
-            building.RoofVariant = FirstRoofVariant + (int)(Unit(seed ^ 0x68e31da4) * RoofVariants) % RoofVariants;
+            {
+                double ur = Unit(seed ^ 0x68e31da4); // tile red 15%, slate 45%, brown 40%
+                building.RoofVariant = FirstRoofVariant + (ur < 0.15 ? 0 : ur < 0.60 ? 1 : 2);
+            }
         }
         return building;
     }
@@ -219,7 +234,7 @@ public static class Buildings
         // The tiles carry no building type, so guess from the shape: towers are modern, big low halls industrial.
         int[] choices = height > 35 ? new[] { 0, 4, 5, 1 }
             : height < 14 && area > 1500 ? new[] { 6, 0, 4 }
-            : new[] { 1, 2, 3, 7, 0 };
+            : new[] { 1, 2, 3, 7, 0, 0, 1, 2, 0, 3 }; // roofs: terracotta only on ochre (1 in 10)
         return choices[(int)(Unit(seed) * choices.Length) % choices.Length];
     }
 

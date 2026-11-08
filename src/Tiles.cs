@@ -235,7 +235,8 @@ public sealed class TileManager : IDisposable
                 Evict(CameraLat, CameraLon, _settings.LoadRadiusKm * 1.5 + 1);
             }
         }
-        _clutter.Update(body, Snapshot, camCcf, _settings.ClutterBudgetMs);
+        using (Perf.Measure("  clutter clearing"))
+            _clutter.Update(body, Snapshot, camCcf, _settings.ClutterBudgetMs);
     }
 
     /// <summary>Launch pad directions of the body, from its landmarks (as the game's own clutter keep-out zones).</summary>
@@ -418,11 +419,23 @@ public sealed class TileManager : IDisposable
     /// </summary>
     private void Place(Tile tile, TileData raw, Celestial body)
     {
+        {
+            // Lakes lower their banks: wait for the lake map of this area, then everything stands on the lowered terrain.
+            var (bs, bw, bn, be) = tile.Key.Bounds;
+            Elevation.WaitForWindow((bs + bn) / 2, (bw + be) / 2);
+            LakeOcean.WaitForMap((bs + bn) / 2, (bw + be) / 2);
+        }
         // Terrain queries are the expensive part, so each tile samples a height grid once and interpolates.
         SampleHeights(body, tile);
         Func<double3, double> terrain = dir => tile.HeightAt(dir);
         // Roads lie flat on the ground, so they follow the exact terrain: its detail is far finer than the grid.
-        Func<double3, double> exactTerrain = dir => body.GetTerrainHeightFromDirCcf(dir);
+        // Roads over lake water (causeways OSM has as plain roads, with no bridge) stay on a raised embankment above the water, not on the cut bed.
+        Func<double3, double> exactTerrain = dir =>
+        {
+            double h = Elevation.Height(body, dir);
+            double lat = Math.Asin(Math.Clamp(dir.Z, -1, 1)) * 180 / Math.PI, lon = Math.Atan2(dir.Y, dir.X) * 180 / Math.PI;
+            return LakeOcean.InWater(lat, lon, 0, out double level) ? Math.Max(h, level + CausewayFreeboardMeters) : h;
+        };
 
         tile.Instances = new BuildingInstance[raw.Buildings.Sum(b => b.Boxes.Count) + raw.Roads.Count * 4];
         var (s, w, n, e) = tile.Key.Bounds;
@@ -461,10 +474,18 @@ public sealed class TileManager : IDisposable
                 // instead. Landmarks (negative ids) stay: the service tower is one.
                 if (building.Id >= 0 && NearLaunchPad(building.Lat, building.Lon, PadCoreMeters))
                     continue;
+                // Boxes standing in the lake (piers, boat sheds, mistagged outlines): the terrain is cut under them and they would stand in the water.
+                var boxes = building.Boxes;
+                if (building.Id >= 0 && !building.LaunchComplex)
+                {
+                    boxes = building.Boxes.Where(box => !BoxInLake(building, box)).ToList();
+                    if (boxes.Count == 0)
+                        continue;
+                }
                 BuildingInstance main = default;
                 double mainArea = 0;
                 int first = tile.Count;
-                foreach (var box in building.Boxes)
+                foreach (var box in boxes)
                 {
                     var instance = Placement.MakeInstance(building, box, _planetRadius, _settings.FoundationMeters, terrain);
                     if (building.Variant == Buildings.TankVariant || building.Variant == Buildings.HorizontalTankVariant)
@@ -495,8 +516,11 @@ public sealed class TileManager : IDisposable
                 var road = raw.Roads[i - raw.Buildings.Count];
                 if (road.Airfield != Airfield.None && !_settings.Airports)
                     continue;
+                if (RoadInLake(road))
+                    continue;
                 var (ts, tw, tn, te) = tile.Key.Bounds;
                 tile.BuiltUp ??= new BuiltUp(raw.Buildings, (ts + tn) / 2);
+                RoadBarriers.Enabled = _settings.RoadBarriers;
                 Placement.AddRoadInstances(road, _planetRadius, exactTerrain,
                     piece =>
                     {
@@ -515,10 +539,61 @@ public sealed class TileManager : IDisposable
             }
         }
 
+        if (_settings.RoadFurniture)
+            RoadFurniture.AddSigns(tile, raw.Roads, _planetRadius, exactTerrain);
+        // Curb fillets, crosswalks and stop lines where roads meet (the roads above are cut around those points).
+        JunctionMarkings.Add(raw.Roads, tile.BuiltUp, _planetRadius, exactTerrain,
+            piece =>
+            {
+                if (!OnLaunchPad(piece))
+                    tile.Add(piece);
+            }, _settings.JunctionFillets, _settings.JunctionMarkings);
+
         tile.BuildingLights.Finish();
         // Street lights from the building density are settled here too; OpenStreetMap data waits for the main thread.
         if (_settings.StreetLights != "Data")
             BuildStreetLights(tile, null, final: true);
+    }
+
+    /// <summary>A road surface this far (m) above the water level where a road crosses a lake on a causeway.</summary>
+    private const double CausewayFreeboardMeters = 0.8;
+    /// <summary>Inside the lake this far (m) from the shore counts as in the water (the map's texels are about 6 m).</summary>
+    private const double LakeInsetMeters = 3;
+
+    /// <summary>
+    /// True if most of a box is in the lake map's water: its centre and at least two of the four points 40 % along each half axis.
+    /// Needs the lake map (Place waits for it); without one nothing is in the lake.
+    /// </summary>
+    private static bool BoxInLake(RawBuilding b, Box2 box)
+    {
+        double cos = Math.Cos(b.Lat * Math.PI / 180), mLat = 111320, mLon = 111320 * cos;
+        bool In(double e, double n) => LakeOcean.InWater(b.Lat + n / mLat, b.Lon + e / mLon, LakeInsetMeters, out _);
+        if (!In(box.CenterEast, box.CenterNorth))
+            return false;
+        double ca = Math.Cos(box.Angle), sa = Math.Sin(box.Angle), ha = 0.4 * box.LengthA, hb = 0.4 * box.LengthB;
+        int inside = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            double u = (i & 1) == 0 ? -ha : ha, v = (i & 2) == 0 ? -hb : hb;
+            if (In(box.CenterEast + u * ca - v * sa, box.CenterNorth + u * sa + v * ca))
+                inside++;
+        }
+        return inside >= 2;
+    }
+
+    /// <summary>
+    /// A minor road (street, track, path) with at least half of its points in the lake map's water is a mistagged pier or a ferry line,
+    /// not a causeway: dropped. Bigger roads over the lake are causeways and stay (on the embankment of exactTerrain).
+    /// </summary>
+    private static bool RoadInLake(RawRoad road)
+    {
+        if (road.Bridge || road.Overpass || road.Rank > 1 || road.Points.Count == 0)
+            return false;
+        int inside = 0;
+        foreach (var (lat, lon) in road.Points)
+            if (LakeOcean.InWater(lat, lon, 4, out _))
+                inside++;
+        return inside * 2 >= road.Points.Count;
     }
 
     /// <summary>
@@ -636,7 +711,11 @@ public sealed class TileManager : IDisposable
                     _ => tile.BuiltUp.Lit(lat, lon, rank),
                 };
             if (lit)
+            {
                 set.Add(light.Position, light.Radius, light.Color, light.Seed);
+                if (final && _settings.RoadFurniture)
+                    RoadFurniture.AddLamp(tile, light);
+            }
             else if (final && _settings.ReflectorPosts)
                 tile.Add(ReflectorPost(light.Position));
         }
@@ -722,7 +801,7 @@ public sealed class TileManager : IDisposable
         {
             double lat = n - (n - s) * (i / g) / (g - 1);
             double lon = w + (e - w) * (i % g) / (g - 1);
-            heights[i] = (float)body.GetTerrainHeightFromDirCcf(Placement.DirCcf(lat, lon));
+            heights[i] = (float)Elevation.Height(body, Placement.DirCcf(lat, lon));
         }
         tile.Heights = heights;
     }
@@ -771,6 +850,7 @@ public sealed class TileManager : IDisposable
                 }
                 // Update sets the body before it asks for tiles.
                 Place(tile, raw, _body ?? throw new InvalidOperationException("no body to place on"));
+                BuildingRenderer.Prepare(tile);
                 lock (_lock)
                     tile.State = TileState.Ready;
                 _tilesFinished = true;
@@ -810,18 +890,72 @@ public sealed class TileManager : IDisposable
     /// <summary>The tile server asked to slow down: downloads pause for a while.</summary>
     internal void Throttled() => _pauseUntil = DateTime.UtcNow + TimeSpan.FromSeconds(30);
 
-    /// <summary>A vector tile of any zoom from the disk cache, or downloaded and cached. Worker threads.</summary>
+    // The decoded vector tiles stay in memory (up to RawLimit): the far field and the water read the same zoom 13 tiles, and a tile
+    // that was dropped and is wanted again (the camera came back) is not read from the disk and unpacked a second time.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int, int), byte[]> _raw = new();
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(int, int, int)> _rawOrder = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(int, int, int), object> _fetchLocks = new();
+    private long _rawBytes;
+    private const long RawLimit = 192L * 1024 * 1024;
+
+    /// <summary>A vector tile of any zoom: from memory, or the disk cache, or downloaded and cached. Worker threads.</summary>
     internal byte[] Fetch(int zoom, int x, int y, out bool fromCache)
+    {
+        var key = (zoom, x, y);
+        if (_raw.TryGetValue(key, out var hit))
+        {
+            fromCache = true;
+            return hit;
+        }
+        // One worker per tile: the others wait for it and then find the file (or the memory copy) ready.
+        object gate = _fetchLocks.GetOrAdd(key, _ => new object());
+        byte[] data;
+        lock (gate)
+        {
+            if (_raw.TryGetValue(key, out hit))
+            {
+                fromCache = true;
+                return hit;
+            }
+            data = FetchOnce(zoom, x, y, out fromCache);
+        }
+        _fetchLocks.TryRemove(key, out _);
+        if (_raw.TryAdd(key, data))
+        {
+            _rawOrder.Enqueue(key);
+            long total = Interlocked.Add(ref _rawBytes, data.Length);
+            while (total > RawLimit && _rawOrder.TryDequeue(out var oldest))
+            {
+                if (_raw.TryRemove(oldest, out var gone))
+                    total = Interlocked.Add(ref _rawBytes, -gone.Length);
+            }
+        }
+        return data;
+    }
+
+    /// <summary>A vector tile from the disk cache, or downloaded and cached.</summary>
+    private byte[] FetchOnce(int zoom, int x, int y, out bool fromCache)
     {
         string dir = Path.Combine(_modDir, "cache", $"omt{zoom}");
         string path = Path.Combine(dir, $"{x}_{y}.pbf.gz");
         if (File.Exists(path))
         {
-            using var gz = new GZipStream(File.OpenRead(path), CompressionMode.Decompress);
-            using var memory = new MemoryStream();
-            gz.CopyTo(memory);
-            fromCache = true;
-            return memory.ToArray();
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    using var gz = new GZipStream(fs, CompressionMode.Decompress);
+                    using var memory = new MemoryStream();
+                    gz.CopyTo(memory);
+                    fromCache = true;
+                    return memory.ToArray();
+                }
+                catch (Exception e) when ((e is IOException || e is UnauthorizedAccessException) && attempt < 5 && File.Exists(path))
+                {
+                    Thread.Sleep(50 * (attempt + 1));
+                }
+            }
         }
         fromCache = false;
 
@@ -849,10 +983,27 @@ public sealed class TileManager : IDisposable
         _gate.Succeeded();
 
         Directory.CreateDirectory(dir);
-        string tmp = $"{path}.{Environment.CurrentManagedThreadId}.tmp";
+        string tmp = $"{path}.{Guid.NewGuid():N}.tmp";
         using (var gz = new GZipStream(File.Create(tmp), CompressionLevel.Fastest))
             gz.Write(data);
-        File.Move(tmp, path, overwrite: true);
+        for (int attempt = 0; ; attempt++)
+        {
+            try
+            {
+                File.Move(tmp, path, overwrite: true);
+                break;
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                if (attempt >= 5)
+                {
+                    // Another process may hold the file; the tile is in memory anyway.
+                    try { File.Delete(tmp); } catch { }
+                    break;
+                }
+                Thread.Sleep(50 * (attempt + 1));
+            }
+        }
         return data;
     }
 

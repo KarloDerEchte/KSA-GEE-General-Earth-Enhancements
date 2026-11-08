@@ -441,4 +441,79 @@
       <Material Id="GEE_V36_Material" />
     </PartModel>
   </StaticObject>
+  <!-- variant 37: highway 3 -->
+  <PbrMaterial Id="GEE_V37_Material">
+    <Diffuse Path="Textures/GEE_V37_Diffuse.ktx2" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
+    <AoRoughMetal Path="Textures/GEE_V37_PBR.ktx2" Category="Vessel" />
+  </PbrMaterial>
+  <StaticObject Id="GEE_Box37">
+    <PartModel Id="GEE_Box37_Model">
+      <Mesh Id="GEE_ScannedSlab" />
+      <Material Id="GEE_V37_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- variant 38: highway 4 -->
+  <PbrMaterial Id="GEE_V38_Material">
+    <Diffuse Path="Textures/GEE_V38_Diffuse.ktx2" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
+    <AoRoughMetal Path="Textures/GEE_V38_PBR.ktx2" Category="Vessel" />
+  </PbrMaterial>
+  <StaticObject Id="GEE_Box38">
+    <PartModel Id="GEE_Box38_Model">
+      <Mesh Id="GEE_ScannedSlab" />
+      <Material Id="GEE_V38_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- variant 39: gore -->
+  <PbrMaterial Id="GEE_V39_Material">
+    <Diffuse Path="Textures/GEE_V39_Diffuse.ktx2" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
+    <AoRoughMetal Path="Textures/GEE_V39_PBR.ktx2" Category="Vessel" />
+  </PbrMaterial>
+  <StaticObject Id="GEE_Box39">
+    <PartModel Id="GEE_Box39_Model">
+      <Mesh Id="GEE_ScannedSlab" />
+      <Material Id="GEE_V39_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- variant 40: junction paint -->
+  <PbrMaterial Id="GEE_V40_Material">
+    <Diffuse Path="Textures/GEE_V40_Diffuse.ktx2" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
+    <AoRoughMetal Path="Textures/GEE_V40_PBR.ktx2" Category="Vessel" />
+  </PbrMaterial>
+  <StaticObject Id="GEE_Box40">
+    <PartModel Id="GEE_Box40_Model">
+      <Mesh Id="GEE_ScannedSlab" />
+      <Material Id="GEE_V40_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- roadside furniture: shared material (furniture_assets.py) -->
+  <PbrMaterial Id="GEE_Furniture_Material">
+    <Diffuse Path="Textures/GEE_Furniture_Diffuse.ktx2" Category="Vessel" />
+    <Normal Path="Textures/GEE_Normal.ktx2" Category="Vessel" />
+    <AoRoughMetal Path="Textures/GEE_Furniture_PBR.ktx2" Category="Vessel" />
+  </PbrMaterial>
+  <!-- variant 41: roadside furniture lamp -->
+  <StaticObject Id="GEE_Box41">
+    <PartModel Id="GEE_Box41_Model">
+      <Mesh Id="GEE_Furniture_lamp" />
+      <Material Id="GEE_Furniture_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- variant 42: roadside furniture sign -->
+  <StaticObject Id="GEE_Box42">
+    <PartModel Id="GEE_Box42_Model">
+      <Mesh Id="GEE_Furniture_sign" />
+      <Material Id="GEE_Furniture_Material" />
+    </PartModel>
+  </StaticObject>
+  <!-- variant 43: roadside furniture gantry -->
+  <StaticObject Id="GEE_Box43">
+    <PartModel Id="GEE_Box43_Model">
+      <Mesh Id="GEE_Furniture_gantry" />
+      <Material Id="GEE_Furniture_Material" />
+    </PartModel>
+  </StaticObject>
 </Assets>

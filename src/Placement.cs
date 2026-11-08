@@ -40,7 +40,8 @@ public static class Layers
 }
 
 /// <summary>A light along a road or airfield surface, in CCF.</summary>
-public readonly record struct RoadLight(double3 Position, uint Color, float Radius, uint Seed);
+/// <summary>Toward: horizontal direction from the lamp post to the road (RoadFurniture), zero where unknown.</summary>
+public readonly record struct RoadLight(double3 Position, uint Color, float Radius, uint Seed, double3 Toward = default);
 
 /// <summary>Planet-fixed geometry for building boxes. Uses no game types, so it can be tested offline.</summary>
 public static class Placement
@@ -296,6 +297,15 @@ public static class Placement
             }
         }
 
+        // Distance along the laid-out road, for the gore hatching of merge tapers (RoadGore).
+        double[]? goreAt = null;
+        if (road.GoreAtStart > 0 || road.GoreAtEnd > 0)
+        {
+            goreAt = new double[dirs.Count];
+            for (int i = 1; i < dirs.Count; i++)
+                goreAt[i] = goreAt[i - 1] + Math.Sqrt(double3.Dot(dirs[i] - dirs[i - 1], dirs[i] - dirs[i - 1])) * radius;
+        }
+
         double half = road.Width / 2;
         // An end at a junction reaches across the road it meets (as far as that one is wide), not past it.
         double EndReach(int point) => road.Clear?[point] is > 0 and var c ? Math.Min(half, (c - 0.5) / 1.15) : half;
@@ -373,7 +383,7 @@ public static class Placement
                         double sideSign = (lightCount & 1) == 0 ? 1 : -1;
                         double3 lamp = at + up * 8 + side * (sideSign * (half + 0.8));
                         uint seed = LightSet.Hash((long)(lamp.X * 10), (long)(lamp.Y * 10), (long)(lamp.Z * 10));
-                        light!(new RoadLight(lamp, LightSet.Pack(LightSet.StreetColor(seed), road.Rank >= 4 ? 7 : 5), 1.5f, seed));
+                        light!(new RoadLight(lamp, LightSet.Pack(LightSet.StreetColor(seed), road.Rank >= 4 ? 7 : 5), 1.5f, seed, side * -sideSign));
                     }
                 }
                 lightAlong -= length;
@@ -401,6 +411,8 @@ public static class Placement
             foreach (var (at, clear) in junctions)
                 if (double3.Dot(ground - at, ground - at) < (clear - 0.01) * (clear - 0.01) && !airfield)
                     pieceVariant = Buildings.PlainVariant(road.Surface);
+            if (goreAt != null && pieceVariant == Buildings.RampVariant && RoadGore.Covers(road, goreAt, i))
+                pieceVariant = Buildings.GoreVariant;
             // Neighbouring pieces overlap in bends; a few millimetres between them keep them from flickering.
             double lift = road.Lift + (i & 1) * 0.004;
             // A ramp up to an overpass stands on its embankment: the slab reaches down to the ground.
@@ -418,21 +430,8 @@ public static class Placement
                 Style = Buildings.StyleNone,
             });
 
-            // Concrete parapets along both edges of an overpass deck.
-            if (road.Overpass)
-                foreach (double sign in new[] { -1.0, 1.0 })
-                    add(new BuildingInstance
-                    {
-                        Up = up * (ParapetHeight + 0.1),
-                        AxisA = along * (length + before + after),
-                        AxisB = side * ParapetWidth,
-                        Base = center + up * (lift - 0.1) + side * (sign * (half - ParapetWidth / 2)),
-                        Center = mid,
-                        Variant = Buildings.ApronVariant,
-                        IsDetail = true,
-                        Layer = Layers.Street,
-                        Style = Buildings.StyleNone,
-                    });
+            // Parapets on bridge decks, guard rails along motorway edges, median barriers (RoadBarriers).
+            RoadBarriers.AddPiece(road, up, along, side, center, mid, length, length + before + after, lift, cross, add);
         }
 
         if (road.Overpass && road.Pillars != null)
@@ -598,14 +597,14 @@ public static class Placement
     /// Model-to-ego matrix (row vectors, like the game's static objects): the box axes and base point,
     /// relative to the camera, rotated from CCF into ecliptic axes. rx/ry/rz are the CCF unit axes in CCE.
     /// </summary>
-    public static float4x4 ModelToEgo(in BuildingInstance b, double3 cameraCcf, double3 rx, double3 ry, double3 rz, double scale = 1)
+    public static float4x4 ModelToEgo(in BuildingInstance b, double3 cameraCcf, double3 rx, double3 ry, double3 rz, double scale = 1, float wearTag = 0)
     {
         double3 u = Rotate(b.Up, rx, ry, rz) * scale;
         double3 a = Rotate(b.AxisA, rx, ry, rz) * scale;
         double3 c = Rotate(b.AxisB, rx, ry, rz) * scale;
         double3 p = Rotate(b.Base - cameraCcf, rx, ry, rz) * scale;
         return new float4x4(
-            (float)u.X, (float)u.Y, (float)u.Z, 0,
+            (float)u.X, (float)u.Y, (float)u.Z, wearTag,
             (float)a.X, (float)a.Y, (float)a.Z, 0,
             (float)c.X, (float)c.Y, (float)c.Z, 0,
             (float)p.X, (float)p.Y, (float)p.Z, 1);

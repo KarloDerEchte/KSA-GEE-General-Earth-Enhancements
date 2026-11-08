@@ -432,7 +432,7 @@ internal static class BuildingRenderer
         for (int v = 0; v < Models.Length; v++)
         {
             string id = $"GEE_Box{v}_Model";
-            Models[v] = all.FirstOrDefault(m => m.Template.Id == id);
+            Models[v] = all.FirstOrDefault(m => m.Template.Key == id);
         }
         _resolvedFrom = all.Count;
         Lists.Clear();

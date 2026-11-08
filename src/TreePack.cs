@@ -55,7 +55,7 @@ internal static class TreePack
             int added = 0;
             for (int n = 0; ecotype.ClutterObjects.Count < MaxObjectsPerEcotype; n++)
             {
-                if (!ModLibrary.TryGet($"{Prefix}{ecotype.Name}_{n}", out ClutterObjectTemplate? tree) || tree == null)
+                if (!ModLibrary.TryGet($"{Prefix}{ecotype.Key}_{n}", out ClutterObjectTemplate? tree) || tree == null)
                     break;
                 // PopulatePlanetData runs again when the renderer is rebuilt; the list keeps what was added.
                 if (ecotype.ClutterObjects.Contains(tree))
@@ -66,7 +66,7 @@ internal static class TreePack
             if (added == 0)
                 continue;
             PopulateMaterials?.Invoke(ecotype, null);
-            Log.Info($"tree pack: {added} trees added to ecotype {ecotype.Name} ({ecotype.ClutterObjects.Count} objects)");
+            Log.Info($"tree pack: {added} trees added to ecotype {ecotype.Key} ({ecotype.ClutterObjects.Count} objects)");
         }
     }
 }

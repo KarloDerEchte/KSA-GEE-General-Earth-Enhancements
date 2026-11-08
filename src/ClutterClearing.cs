@@ -223,7 +223,7 @@ internal sealed class ClutterClearing
             int resolution = Clutter.GridResolution(body.MeanRadius, separation);
             if (physical != null && i < physical.Length && physical[i].VesselGrid.GridResolution is int game and > 0 && game != resolution)
             {
-                Log.Error($"clutter grid {ecotypes[i].Name}: computed resolution {resolution}, game uses {game}");
+                Log.Error($"clutter grid {ecotypes[i].Key}: computed resolution {resolution}, game uses {game}");
                 resolution = game;
             }
             // Trees get a few metres so their trunks stand clear of the kerb, shrubs (5 m apart) 2 m. Grass clumps
@@ -231,9 +231,9 @@ internal sealed class ClutterClearing
             double clearance = Math.Clamp(0.4 * separation, 1.0, _settings.TreeClearanceMeters);
             grids[i] = new ClutterGrid(i, resolution, clearance);
             _collideable[i] = ecotypes[i].Collideable;
-            _kinds[i] = TreeCover.KindOf(ecotypes[i].Name);
+            _kinds[i] = TreeCover.KindOf(ecotypes[i].Key);
             _ranges[i] = ecotypes[i].Placement.GenerationRange.InMeters();
-            Log.Info($"clutter grid {ecotypes[i].Name}: separation {separation:0.##} m, resolution {resolution}, clearance {clearance:0.#} m");
+            Log.Info($"clutter grid {ecotypes[i].Key}: separation {separation:0.##} m, resolution {resolution}, clearance {clearance:0.#} m");
         }
         _grids = grids;
     }

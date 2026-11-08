@@ -1,6 +1,6 @@
 name = "GEE"
 description = "OpenStreetMap buildings, roads and lights on Earth, satellite imagery from altitude, and modelled launch complexes at the game's pads (LC-39A, Starbase, ELA-4, SLC-4E, LC-1). Map data (c) OpenStreetMap contributors (ODbL), (c) OpenMapTiles, tiles by OpenFreeMap. Imagery: EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016), CC BY 4.0. Land cover: (c) ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium, CC BY 4.0. LC-39 fixed service structure from the NASA 3D Resources model \"Gantry\" (NASA / Michael D. Carbajal). Road asphalt: \"Asphalt Pit Lane\" by Dimitrios Savva, Poly Haven (CC0). Extra trees: based on \"Low Poly Forest Tree Pack\" by 99.Miles (https://sketchfab.com/99.Miles), CC BY 4.0. See NOTICE.md."
-version = "0.2.1"
+version = "0.2.2"
 author = "KarloDerEchte"
 
 assets = [ "Assets.xml", "Trees.xml" ]

@@ -505,9 +505,34 @@ internal static class LakeOcean
     {
         if (Settings is not { Water: true })
             return null;
-        foreach (string anchor in new[] { UvAnchor, ShoreAnchor, ColorAnchor })
+        foreach (string anchor in new[] { MainAnchor, UvAnchor, ShoreAnchor, ColorAnchor })
             if (source.Split(anchor).Length != 2)
                 return null;
+        const string early = """
+                // GEE: lake pass, early exit: most pixels of a pass are not in its lakes, and the shader's heaviest work (cloud shadows,
+                // atmosphere, wave moments) comes before the exact test below. Only pixels whose whole 2x2 quad is clearly outside go
+                // here: the wave moments and UV gradients use derivatives, so a quad on the shore must stay complete. The margin covers
+                // the difference between this bilinear lookup and the cubic one of the exact test.
+                if (uboStaticOceanData.waveCount < 0)
+                {
+                    vec3 geeEarlyNormal = mat3(uboDynamicOceanData.worldToPlanet) * normalize(inOceanWorldPosition.xyz - global.lighting.planetPosition.xyz);
+                    vec2 geeEarlyDx, geeEarlyDy;
+                    vec2 geeEarlyUv = (CalculateSphericalUVAndGradients(geeEarlyNormal, geeEarlyDx, geeEarlyDy)
+                        - vec2(uboStaticOceanData.waveAmplitude, uboStaticOceanData.waveLength))
+                        / vec2(uboStaticOceanData.waveSpeed, uboStaticOceanData.amplitudePersistence);
+                    float geeEarly = -128.0;
+                    if (geeEarlyUv.x >= 0.0 && geeEarlyUv.x <= 1.0 && geeEarlyUv.y >= 0.0 && geeEarlyUv.y <= 1.0)
+                    {
+                        #define geeEarlyMap TEXTURE_SAMPLER(int(uboStaticOceanData.waveLengthPersistence + 0.5), globalConstants.clampSamplerHandle)
+                        if (int(texelFetch(geeEarlyMap, ivec2(min(geeEarlyUv * GEE_MASKSIZE, vec2(GEE_MASKSIZE - 1.0))), 0).g * 255.0 + 0.5) == int(uboStaticOceanData.speedPersistence + 0.5))
+                            geeEarly = textureLod(geeEarlyMap, geeEarlyUv, 0.0).r * 255.0 - 128.0;
+                        #undef geeEarlyMap
+                    }
+                    if (geeEarly + 2.0 * fwidth(geeEarly) + 8.0 < 0.0)
+                        discard;
+                }
+
+            """;
         const string mask = """
                 // GEE: lake pass (mods/GEE LakeOcean.cs): only inside the lakes of the map. Its red channel holds the signed distance to
                 // the shore, its green channel the index of the level of the nearest lake; this pass draws the lakes of one index.
@@ -561,7 +586,7 @@ internal static class LakeOcean
                 }
 
             """;
-        return source.Replace(UvAnchor, UvAnchor + Constants(mask)).Replace(ShoreAnchor, ShoreAnchor + shore).Replace(ColorAnchor, color);
+        return source.Replace(MainAnchor, MainAnchor + Constants(early)).Replace(UvAnchor, UvAnchor + Constants(mask)).Replace(ShoreAnchor, ShoreAnchor + shore).Replace(ColorAnchor, color);
     }
 
     /// <summary>

@@ -25,11 +25,11 @@ public struct SatInstance
     public float4 Up;
     /// <summary>Centre latitude and longitude, Mercator ordinate of the north and south edges (radians).</summary>
     public float4 Geo;
-    /// <summary>West and east longitude (radians), radius of the lowest terrain (planet radius plus height), lift.</summary>
+    /// <summary>West and east longitude (radians), radius of the lowest terrain (planet radius plus height), z of the sun direction (ego; x and y are in East.W and North.W).</summary>
     public float4 Geo2;
     /// <summary>UV offset and scale within the layer (a parent's part while the tile itself loads).</summary>
     public float4 Uv;
-    /// <summary>x opacity, y sunlight, z height (m) the tile is pulled in front of the ground, along the view ray, w grid cells per side (16 or 8).</summary>
+    /// <summary>x opacity, y 1 when there is no sun to shade by (else 0: the shader lights each pixel), z height (m) the tile is pulled in front of the ground, along the view ray, w grid cells per side (16 or 8).</summary>
     public float4 Params;
     /// <summary>
     /// 9 x 9 terrain heights (rows north to south on the vertex grid's Mercator rows, columns west to east), 10 bits
@@ -99,6 +99,8 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
 
         layout(location = 0) out vec3 outUv;
         layout(location = 1) flat out vec2 outLook;
+        layout(location = 2) out vec3 outDir;
+        layout(location = 3) flat out vec3 outSun;
 
         const int HGRID = 9;
         const vec2 corners[6] = vec2[](vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 0), vec2(1, 1), vec2(0, 1));
@@ -129,11 +131,15 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
             float r = geo2.z + h;
             // The point's direction in the centre's east/north/up frame, minus up, without cancellation.
             float cl = cos(lat);
-            vec3 local = vec3(cl * sin(dLon),
-                              sin(dLat) + 2.0 * cl * sin(lat0) * sLon * sLon,
-                              -2.0 * sLat * sLat - 2.0 * cl * cos(lat0) * sLon * sLon) * r;
-            local.z += h + geo2.w;
+            vec3 unit = vec3(cl * sin(dLon),
+                             sin(dLat) + 2.0 * cl * sin(lat0) * sLon * sLon,
+                             -2.0 * sLat * sLat - 2.0 * cl * cos(lat0) * sLon * sLon);
+            vec3 local = unit * r;
+            local.z += h + 3.0;
             vec3 p = center.xyz + east.xyz * local.x + north.xyz * local.y + up.xyz * local.z;
+            // The ground's direction from the planet's centre, for the sunlight of each pixel.
+            outDir = east.xyz * unit.x + north.xyz * unit.y + up.xyz * (unit.z + 1.0);
+            outSun = vec3(east.w, north.w, geo2.w);
             // Pulled toward the camera along the view ray: the same place on screen, but params.z metres (vertically)
             // in front of the terrain between the height samples, of the game's coarse distant terrain triangles,
             // and of the trees, which the photo already shows. Grazing rays need a longer pull for the same height.
@@ -151,6 +157,8 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
 
         layout(location = 0) in vec3 uv;
         layout(location = 1) flat in vec2 look;
+        layout(location = 2) in vec3 dir;
+        layout(location = 3) flat in vec3 sun;
 
         layout(set = 1, binding = 0) uniform sampler2DArray imagery;
 
@@ -159,9 +167,17 @@ internal sealed class SatelliteTechnique(VkImageView array) : InstancedPass<SatI
         void main()
         {
             vec3 color = texture(imagery, uv).rgb;
+            // Per pixel: one value per tile showed the big tiles seen from orbit as rectangles along the terminator. On the night
+            // side the photo would only lay a dark veil over the lights, so it fades out from about 10 degrees of sun.
+            float light = 1.0, day = 1.0;
+            if (look.y < 0.5)
+            {
+                light = clamp(0.1 + 1.15 * dot(normalize(dir), sun), 0.02, 1.0);
+                day = smoothstep(0.1, 0.32, light);
+            }
             // The images are display referred (sRGB); the scene is linear.
-            color = pow(color, vec3(2.2)) * look.y;
-            float alpha = look.x;
+            color = pow(color, vec3(2.2)) * light;
+            float alpha = look.x * day;
             outColor = vec4(color * alpha, alpha);
         }
         """;
@@ -672,12 +688,18 @@ internal static class SatelliteImagery
             LayerUsed[layer] = _frame;                                  // drawn by the drape or the ground colour
         if (fade <= 0)
             return;                                                    // ground colour only: no drape, no heights
-        // On the night side the photo would only lay a dark veil over the buildings, roads and their lights: it
-        // fades out from about 10 degrees of sun to the terminator. (Decided before the heights are asked for, so
-        // tiles that are not drawn are not sampled either.)
-        float light = sun is { } sd ? (float)Math.Clamp(0.1 + 1.15 * double3.Dot(centerDir, sd), 0.02, 1.0) : 1f;
-        fade *= Smooth(0.1, 0.32, light);
-        if (fade < 0.004f)
+        // The shader lights and fades each pixel by the sun. Here only: a tile no part of which sees enough sun is left out, judged at
+        // its point nearest the sun, so a big tile across the terminator stays. (Decided before the heights are asked for, so tiles
+        // that are not drawn are not sampled either.)
+        double3 sunEgo = default;
+        float dayFade = fade;
+        if (sun is { } sd)
+        {
+            sunEgo = Rotate(sd, rx, ry, rz);
+            double nearest = Math.Max(Math.Acos(Math.Clamp(double3.Dot(centerDir, sd), -1, 1)) - geo.Radius / planetR, 0);
+            dayFade *= Smooth(0.1, 0.32, Math.Clamp(0.1 + 1.15 * Math.Cos(nearest), 0.02, 1.0));
+        }
+        if (dayFade < 0.004f)
             return;
         bool ownHeights = HeightCache.TryGetValue(key, out TileHeights? own);
         if (!ownHeights)
@@ -710,12 +732,12 @@ internal static class SatelliteImagery
         var instance = new SatInstance
         {
             Center = new float4((float)egoCenter.X, (float)egoCenter.Y, (float)egoCenter.Z, layer),
-            East = new float4((float)eE.X, (float)eE.Y, (float)eE.Z, 0),
-            North = new float4((float)eN.X, (float)eN.Y, (float)eN.Z, 0),
+            East = new float4((float)eE.X, (float)eE.Y, (float)eE.Z, (float)sunEgo.X),
+            North = new float4((float)eN.X, (float)eN.Y, (float)eN.Z, (float)sunEgo.Y),
             Up = new float4((float)eU.X, (float)eU.Y, (float)eU.Z, span),
             Geo = new float4(geo.Lat0, geo.Lon0, geo.MercN, geo.MercS),
-            Geo2 = new float4(geo.WestRad, geo.EastRad, (float)(planetR + low), 3),
-            Params = new float4(fade, light, (float)pull, coarse ? SatelliteTechnique.CoarseGrid : SatelliteTechnique.Grid),
+            Geo2 = new float4(geo.WestRad, geo.EastRad, (float)(planetR + low), (float)sunEgo.Z),
+            Params = new float4(fade, sun == null ? 1 : 0, (float)pull, coarse ? SatelliteTechnique.CoarseGrid : SatelliteTechnique.Grid),
             H0 = new uint4(words[0], words[1], words[2], words[3]),
             H1 = new uint4(words[4], words[5], words[6], words[7]),
             H2 = new uint4(words[8], words[9], words[10], words[11]),

@@ -125,6 +125,11 @@ internal static class LakeOcean
                 harmony.Patch(_perform, postfix: new HarmonyMethod(typeof(LakeOcean), nameof(AfterPerformRendering)));
             else
                 Log.Error("lakes: OceanRenderer.PerformRendering not found, no lake surface");
+            var cull = AccessTools.Method(typeof(OceanRenderer), "PerformCulling");
+            if (cull != null)
+                harmony.Patch(cull, postfix: new HarmonyMethod(typeof(LakeOcean), nameof(AfterPerformCulling)));
+            else
+                Log.Error("lakes: OceanRenderer.PerformCulling not found, lake passes draw the whole ocean mesh");
             var allocate = AccessTools.Method(typeof(PlanetRenderer), "AllocateCelestialDescriptorSet");
             if (allocate != null)
                 harmony.Patch(allocate, prefix: new HarmonyMethod(typeof(LakeOcean), nameof(BeforeAllocateDescriptorSet)));
@@ -196,15 +201,13 @@ internal static class LakeOcean
                 var args = _argBuffer;
                 Array.Copy(__args, args, args.Length);
                 args[3] = clone;
-                // The game culled the ocean's patches for sea level (a compute pass; its index list is still valid here); the
-                // lake's surface is higher, so patches near the camera that were out of view down there can be in view here.
-                // That only matters close to the lake: there the whole mesh is drawn (and tessellated, as the game does near
-                // its sea). Everywhere else the pass reuses the sea's culled patches untessellated. Before, every pass (up to
-                // 12 with river pieces) drew the whole tessellated mesh: 21 ms of a 30 ms frame at the pad (GPU probe).
-                bool near = NearLake(camCcf, body, active, k);
-                args[7] = near && TessellationNear(__instance, body, active.Levels[k], k);
+                // The pass reuses the patch list of the game's culling compute pass, which AfterPerformCulling widened by the
+                // height of the highest lake: frustum and horizon tests then hold for every level. Before, every pass (up to 12)
+                // drew the whole tessellated mesh: 21 ms of a 30 ms frame at the pad (GPU probe). Without the widening (hook
+                // missing) the whole mesh is the only correct choice. Tessellation stays as the game does it near its sea.
+                args[7] = TessellationNear(__instance, body, active.Levels[k], k);
                 bool wasCulling = culling;
-                culling = wasCulling && !near;
+                culling = wasCulling && active.Levels[k] - original.OceanLevel <= _cullingLift + 0.01;
                 try
                 {
                     _perform!.Invoke(__instance, args);
@@ -223,23 +226,27 @@ internal static class LakeOcean
         }
     }
 
-    /// <summary>A pass draws the whole (unculled) ocean mesh only within this distance of its lakes' bounding sphere...</summary>
-    private const double NearLakeMeters = 2500;
-    /// <summary>...and while the camera is at most this high above the lake level (plus 40x the level's height above the sea).</summary>
-    private const double NearLakeHeightMeters = 1500;
-    private static readonly bool[] WasNear = new bool[Passes];
+    /// <summary>How far above the sea this frame's culled patch list is valid (m); 0 until AfterPerformCulling has widened it.</summary>
+    private static double _cullingLift;
+    private static readonly FieldInfo? CullingMemory = AccessTools.Field(typeof(OceanRenderer), "_dynamicCullingDataMemory");
 
-    /// <summary>Is the camera close enough to pass k's lakes for the sea-level culling to cut off visible lake patches? (with hysteresis)</summary>
-    private static bool NearLake(double3 camCcf, Celestial body, Result active, int k)
+    /// <summary>
+    /// OceanFrustumCulling.comp tests a sphere around each sea-level triangle against the frustum and the planet's horizon, with
+    /// CullingTolerance added to the sphere and taken off the occluder. Adding the highest lake's height above the sea makes the
+    /// list hold for every lake level (a lake's triangle is the sea's moved up by at most that). The block is read when the GPU
+    /// runs the pass, so changing it here, right after the game wrote it, is in time.
+    /// </summary>
+    private static void AfterPerformCulling(OceanRenderer __instance, int frameIndex, OceanRenderData oceanRenderData)
     {
-        double level = active.Levels[k];
-        double above = camCcf.Length() - (body.MeanRadius + level);
-        double heightLimit = Math.Max(NearLakeHeightMeters, Math.Max(level - SeaLevelMeters, 0) * 40);
-        double distance = k < active.Centers.Length ? (active.Centers[k] - camCcf).Length() - active.Radii[k] : 0;
-        double grow = WasNear[k] ? 1.2 : 1.0;
-        bool near = above < heightLimit * grow && distance < NearLakeMeters * grow;
-        WasNear[k] = near;
-        return near;
+        _cullingLift = 0;
+        if (_failed || !_bound || Settings is not { Enabled: true, Water: true } || _active is not { Levels.Length: > 0 } active || CullingMemory == null)
+            return;
+        double lift = active.Levels.Max() - oceanRenderData.OceanLevel;
+        if (lift <= 0)
+            return;
+        var memory = (MappedMemory)CullingMemory.GetValue(__instance)!;
+        memory.Offset(frameIndex * OceanRenderer.OceanCullingDataStride).As<OceanCullingData>().CullingTolerance += (float)lift;
+        _cullingLift = lift;
     }
 
     /// <summary>Below this radius / distance (about 2 pixels at 1440p with a 60 degree view) a pass's lakes are not drawn.</summary>
